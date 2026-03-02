@@ -155,6 +155,32 @@ class StorageService {
     await _prefs?.setBool(StorageKeys.hapticsEnabled, enabled);
   }
 
+  // Power-up Levels
+  Future<int> getShieldLevel() async {
+    return _prefs?.getInt(StorageKeys.shieldLevel) ?? 1;
+  }
+
+  Future<void> setShieldLevel(int level) async {
+    await _prefs?.setInt(StorageKeys.shieldLevel, level);
+  }
+
+  Future<int> getMagnetLevel() async {
+    return _prefs?.getInt(StorageKeys.magnetLevel) ?? 1;
+  }
+
+  Future<void> setMagnetLevel(int level) async {
+    await _prefs?.setInt(StorageKeys.magnetLevel, level);
+  }
+
+  // Boosters
+  Future<bool> isDoubleCoinsPurchased() async {
+    return _prefs?.getBool(StorageKeys.doubleCoins) ?? false;
+  }
+
+  Future<void> setDoubleCoinsPurchased(bool purchased) async {
+    await _prefs?.setBool(StorageKeys.doubleCoins, purchased);
+  }
+
   // Tutorial Settings
   Future<bool> hasSeenTutorial() async {
     return _prefs?.getBool('has_seen_tutorial') ?? false;

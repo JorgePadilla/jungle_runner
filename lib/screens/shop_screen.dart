@@ -19,6 +19,7 @@ class ShopScreen extends StatefulWidget {
 
 class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
   late StorageService _storageService;
+  late TabController _tabController;
 
   // ── Animations ──────────────────────────────────────────────────
   late AnimationController _entranceController;
@@ -34,6 +35,9 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
   int _displayedCoins = 0;
   List<String> _unlockedSkins = [];
   String _selectedSkin = 'default';
+  int _shieldLevel = 1;
+  int _magnetLevel = 1;
+  bool _isDoubleCoinsPurchased = false;
   bool _isLoading = true;
   String? _celebratingSkinId;
 
@@ -43,6 +47,7 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _prepareSkinOrder();
     _setupAnimations();
     _initializeData();
@@ -106,6 +111,9 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
     _displayedCoins = _totalCoins;
     _unlockedSkins = await _storageService.getUnlockedSkins();
     _selectedSkin = await _storageService.getSelectedSkin();
+    _shieldLevel = await _storageService.getShieldLevel();
+    _magnetLevel = await _storageService.getMagnetLevel();
+    _isDoubleCoinsPurchased = await _storageService.isDoubleCoinsPurchased();
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -115,6 +123,7 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _tabController.dispose();
     _entranceController.dispose();
     _coinBounceController.dispose();
     _celebrationController.dispose();
@@ -237,7 +246,51 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
   Widget _buildBody() {
     return Column(
       children: [
-        // Subtitle
+        // Tab bar
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: GameConstants.spacingMd),
+          child: Container(
+            height: 45,
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(GameConstants.radiusMd),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                borderRadius: BorderRadius.circular(GameConstants.radiusMd),
+                gradient: GameConstants.accentGradient,
+              ),
+              labelColor: Colors.white,
+              unselectedLabelColor: GameConstants.onSurfaceDim,
+              labelStyle: GameConstants.labelLarge,
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: 'SKINS'),
+                Tab(text: 'UPGRADES'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: GameConstants.spacingSm),
+
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildSkinsTab(),
+              _buildUpgradesTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSkinsTab() {
+    return Column(
+      children: [
         Padding(
           padding: const EdgeInsets.symmetric(
               horizontal: GameConstants.spacingXl,
@@ -249,9 +302,244 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: GameConstants.spacingSm),
-        // Carousel
         Expanded(child: _buildCarousel()),
       ],
+    );
+  }
+
+  Widget _buildUpgradesTab() {
+    return ListView(
+      padding: const EdgeInsets.all(GameConstants.spacingMd),
+      physics: const BouncingScrollPhysics(),
+      children: [
+        _buildUpgradeItem(
+          title: 'Shield Duration',
+          description: 'Stay protected longer',
+          icon: Icons.shield_rounded,
+          color: Colors.blue,
+          level: _shieldLevel,
+          onUpgrade: () => _upgradePowerUp('shield'),
+          maxLevel: GameConfig.maxUpgradeLevel,
+          price: GameConfig.shieldUpgradePrices[_shieldLevel + 1],
+          nextBenefit: '+${((GameConfig.shieldDurations[_shieldLevel + 1] ?? 0) - (GameConfig.shieldDurations[_shieldLevel] ?? 0)).toInt()}s duration',
+        ),
+        const SizedBox(height: GameConstants.spacingMd),
+        _buildUpgradeItem(
+          title: 'Magnet Duration',
+          description: 'Attract coins for longer',
+          icon: Icons.monetization_on_rounded,
+          color: Colors.amber,
+          level: _magnetLevel,
+          onUpgrade: () => _upgradePowerUp('magnet'),
+          maxLevel: GameConfig.maxUpgradeLevel,
+          price: GameConfig.magnetUpgradePrices[_magnetLevel + 1],
+          nextBenefit: '+${((GameConfig.magnetDurations[_magnetLevel + 1] ?? 0) - (GameConfig.magnetDurations[_magnetLevel] ?? 0)).toInt()}s duration',
+        ),
+        const SizedBox(height: GameConstants.spacingMd),
+        _buildBoosterItem(
+          title: 'Double Coins',
+          description: 'Permanent 2x coins multiplier',
+          icon: Icons.stars_rounded,
+          color: GameConstants.coinGold,
+          isPurchased: _isDoubleCoinsPurchased,
+          price: GameConfig.doubleCoinsPrice,
+          onPurchase: _purchaseDoubleCoins,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUpgradeItem({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required int level,
+    required VoidCallback onUpgrade,
+    required int maxLevel,
+    int? price,
+    String? nextBenefit,
+  }) {
+    final isMax = level >= maxLevel;
+    final canAfford = price != null && _totalCoins >= price;
+
+    return GlassCard(
+      padding: const EdgeInsets.all(GameConstants.spacingMd),
+      borderRadius: GameConstants.radiusLg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: GameConstants.spacingMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GameConstants.headlineMedium.copyWith(fontSize: 16)),
+                    Text(description, style: GameConstants.bodyMedium),
+                  ],
+                ),
+              ),
+              if (!isMax)
+                _buildPriceTag(price!, canAfford)
+              else
+                _buildMaxTag(),
+            ],
+          ),
+          const SizedBox(height: GameConstants.spacingMd),
+          Row(
+            children: [
+              ...List.generate(maxLevel, (index) {
+                final isActive = index < level;
+                return Expanded(
+                  child: Container(
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: BoxDecoration(
+                      color: isActive ? color : Colors.white10,
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: isActive ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 4)] : null,
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: GameConstants.spacingSm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Level $level / $maxLevel', style: GameConstants.labelSmall),
+              if (!isMax && nextBenefit != null)
+                Text('Next: $nextBenefit', style: GameConstants.labelSmall.copyWith(color: color)),
+            ],
+          ),
+          if (!isMax) ...[
+            const SizedBox(height: GameConstants.spacingMd),
+            AnimatedButton(
+              label: 'UPGRADE',
+              height: 40,
+              gradient: canAfford ? GameConstants.accentGradient : null,
+              color: canAfford ? null : Colors.white10,
+              onTap: onUpgrade,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBoosterItem({
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required bool isPurchased,
+    required int price,
+    required VoidCallback onPurchase,
+  }) {
+    final canAfford = _totalCoins >= price;
+
+    return GlassCard(
+      padding: const EdgeInsets.all(GameConstants.spacingMd),
+      borderRadius: GameConstants.radiusLg,
+      glowBorder: !isPurchased,
+      glowColor: color,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(width: GameConstants.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GameConstants.headlineMedium.copyWith(fontSize: 16)),
+                Text(description, style: GameConstants.bodyMedium),
+              ],
+            ),
+          ),
+          const SizedBox(width: GameConstants.spacingSm),
+          if (isPurchased)
+            _buildMaxTag(label: 'ACTIVE')
+          else
+            Column(
+              children: [
+                _buildPriceTag(price, canAfford),
+                const SizedBox(height: 8),
+                AnimatedButton(
+                  label: 'BUY',
+                  width: 70,
+                  height: 32,
+                  fontSize: 11,
+                  gradient: canAfford ? GameConstants.goldGradient : null,
+                  color: canAfford ? null : Colors.white10,
+                  onTap: onPurchase,
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceTag(int price, bool canAfford) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(GameConstants.radiusSm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.monetization_on_rounded, color: canAfford ? GameConstants.coinGold : Colors.grey, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            price.toString(),
+            style: TextStyle(
+              color: canAfford ? GameConstants.coinGold : Colors.grey,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMaxTag({String label = 'MAX'}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: GameConstants.success.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(GameConstants.radiusSm),
+        border: Border.all(color: GameConstants.success.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: GameConstants.success,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+          letterSpacing: 1,
+        ),
+      ),
     );
   }
 
@@ -370,7 +658,95 @@ class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
     _displayedCoins = _totalCoins;
     _unlockedSkins = await _storageService.getUnlockedSkins();
     _selectedSkin = await _storageService.getSelectedSkin();
+    _shieldLevel = await _storageService.getShieldLevel();
+    _magnetLevel = await _storageService.getMagnetLevel();
+    _isDoubleCoinsPurchased = await _storageService.isDoubleCoinsPurchased();
     if (mounted) setState(() {});
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  UPGRADE LOGIC
+  // ════════════════════════════════════════════════════════════════
+
+  Future<void> _upgradePowerUp(String type) async {
+    final isShield = type == 'shield';
+    final currentLevel = isShield ? _shieldLevel : _magnetLevel;
+
+    if (currentLevel >= GameConfig.maxUpgradeLevel) return;
+
+    final nextLevel = currentLevel + 1;
+    final price = isShield
+        ? GameConfig.shieldUpgradePrices[nextLevel]
+        : GameConfig.magnetUpgradePrices[nextLevel];
+
+    if (price == null) return;
+
+    if (_totalCoins >= price) {
+      _showUpgradeConfirmSheet(
+        title: isShield ? 'Upgrade Shield?' : 'Upgrade Magnet?',
+        price: price,
+        onConfirm: () async {
+          Navigator.of(context).pop();
+          final success = await _storageService.spendCoins(price);
+          if (success) {
+            if (isShield) {
+              await _storageService.setShieldLevel(nextLevel);
+            } else {
+              await _storageService.setMagnetLevel(nextLevel);
+            }
+            _animateCoinDecrease(price);
+            HapticFeedback.heavyImpact();
+            await _refreshData();
+          }
+        },
+      );
+    } else {
+      _showInsufficientSheet(price);
+    }
+  }
+
+  Future<void> _purchaseDoubleCoins() async {
+    if (_isDoubleCoinsPurchased) return;
+
+    final price = GameConfig.doubleCoinsPrice;
+
+    if (_totalCoins >= price) {
+      _showUpgradeConfirmSheet(
+        title: 'Buy Double Coins?',
+        price: price,
+        onConfirm: () async {
+          Navigator.of(context).pop();
+          final success = await _storageService.spendCoins(price);
+          if (success) {
+            await _storageService.setDoubleCoinsPurchased(true);
+            _animateCoinDecrease(price);
+            HapticFeedback.heavyImpact();
+            await _refreshData();
+          }
+        },
+      );
+    } else {
+      _showInsufficientSheet(price);
+    }
+  }
+
+  void _showUpgradeConfirmSheet({
+    required String title,
+    required int price,
+    required VoidCallback onConfirm,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PurchaseSheet(
+        skinName: '', // Not used for upgrades but required by widget
+        skinId: '',
+        price: price,
+        coins: _totalCoins,
+        onConfirm: onConfirm,
+        customTitle: title,
+      ),
+    );
   }
 
   // ── Purchase bottom sheet ─────────────────────────────────────
@@ -824,6 +1200,7 @@ class _PurchaseSheet extends StatelessWidget {
   final int price;
   final int coins;
   final VoidCallback onConfirm;
+  final String? customTitle;
 
   const _PurchaseSheet({
     required this.skinName,
@@ -831,6 +1208,7 @@ class _PurchaseSheet extends StatelessWidget {
     required this.price,
     required this.coins,
     required this.onConfirm,
+    this.customTitle,
   });
 
   @override
@@ -855,7 +1233,7 @@ class _PurchaseSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: GameConstants.spacingLg),
-          Text('Unlock $skinName?',
+          Text(customTitle ?? 'Unlock $skinName?',
               style: GameConstants.headlineMedium),
           const SizedBox(height: GameConstants.spacingMd),
           // Price row

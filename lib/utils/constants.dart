@@ -209,5 +209,8 @@ class StorageKeys {
   static const String soundEnabled = 'sound_enabled';
   static const String hapticsEnabled = 'haptics_enabled';
   static const String activeMissions = 'active_missions';
+  static const String shieldLevel = 'shield_level';
+  static const String magnetLevel = 'magnet_level';
+  static const String doubleCoins = 'double_coins_purchased';
   static const String completedMissionsCount = 'completed_missions_count';
 }
