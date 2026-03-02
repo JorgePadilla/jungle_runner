@@ -1,7 +1,5 @@
-import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'components/player.dart';
@@ -43,7 +41,6 @@ class JungleRunnerGame extends FlameGame
   
   // Input handling
   double _lastTapTime = 0;
-  bool _isSwipeDetected = false;
   
   // Callbacks for UI updates
   Function(int score, int coins)? onScoreChanged;
@@ -133,7 +130,7 @@ class JungleRunnerGame extends FlameGame
 
   void _onHighScoreBroken() {
     // Visual feedback for breaking high score
-    _vibrate(HapticFeedback.mediumImpact);
+    _vibrate(() => HapticFeedback.mediumImpact());
     onHighScoreBroken?.call();
   }
   
@@ -177,12 +174,12 @@ class JungleRunnerGame extends FlameGame
   
   void _collectCoin(Coin coin) {
     _currentRunCoins += coin.coinValue;
-    _vibrate(HapticFeedback.lightImpact);
+    _vibrate(() => HapticFeedback.lightImpact());
     // TODO: Play coin collection sound
   }
   
   void _collectPowerUp(PowerUp powerUp) {
-    _vibrate(HapticFeedback.mediumImpact);
+    _vibrate(() => HapticFeedback.mediumImpact());
     switch (powerUp.type) {
       case PowerUpType.shield:
         _player.activateShield(powerUp.getDuration());
@@ -199,7 +196,7 @@ class JungleRunnerGame extends FlameGame
   
   void _gameOver() {
     _gameState = GameState.gameOver;
-    _vibrate(HapticFeedback.heavyImpact);
+    _vibrate(() => HapticFeedback.heavyImpact());
 
     // Pause the engine to freeze the game state
     pauseEngine();
@@ -246,7 +243,7 @@ class JungleRunnerGame extends FlameGame
     }
 
     if (jumped) {
-      _vibrate(HapticFeedback.selectionClick);
+      _vibrate(() => HapticFeedback.selectionClick());
     }
     
     _lastTapTime = currentTime;
@@ -338,7 +335,7 @@ class JungleRunnerGame extends FlameGame
   void handleSwipe(String direction) {
     if (direction == 'down') {
       _handleSwipeDown();
-      _vibrate(HapticFeedback.selectionClick);
+      _vibrate(() => HapticFeedback.selectionClick());
     }
   }
   

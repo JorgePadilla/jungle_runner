@@ -88,15 +88,18 @@ class SkyLayer extends BackgroundLayer {
   
   @override
   void render(Canvas canvas) {
-    // Draw sky gradient
+    // Draw sky gradient with more colors for quality
     final skyGradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        const Color(0xFF87CEEB), // Sky blue at top
-        const Color(0xFFB0E0E6), // Powder blue in middle
-        const Color(0xFFF0F8FF), // Alice blue at bottom
+        const Color(0xFF01579B), // Dark blue (Top)
+        const Color(0xFF0288D1), // Medium blue
+        const Color(0xFF29B6F6), // Sky blue
+        const Color(0xFF81D4FA), // Light blue
+        const Color(0xFFE1F5FE), // Very light blue (Horizon)
       ],
+      stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
     );
     
     final skyPaint = Paint()
@@ -108,8 +111,6 @@ class SkyLayer extends BackgroundLayer {
       Rect.fromLTWH(0, 0, GameConfig.worldWidth * 2, GameConfig.worldHeight * 0.6),
       skyPaint,
     );
-    
-    // TODO: Replace with actual sky sprite/texture
   }
   
   @override
@@ -138,21 +139,22 @@ class CloudComponent extends RectangleComponent {
   
   @override
   void render(Canvas canvas) {
-    final cloudPaint = Paint()..color = Colors.white.withOpacity(0.8);
+    // Enhanced puffy cloud rendering
+    final mainPaint = Paint()..color = Colors.white.withOpacity(0.9);
+    final shadowPaint = Paint()..color = Colors.blueGrey.withOpacity(0.2);
     
-    // Draw puffy cloud shape
-    final cloudPath = Path();
     final centerX = size.x / 2;
     final centerY = size.y / 2;
+
+    // Draw cloud shadow/bottom part
+    canvas.drawCircle(Offset(centerX, centerY + 2), size.y * 0.35, shadowPaint);
     
-    // Main cloud body
-    canvas.drawCircle(Offset(centerX, centerY), size.y * 0.3, cloudPaint);
-    // Left puff
-    canvas.drawCircle(Offset(centerX - size.x * 0.25, centerY), size.y * 0.25, cloudPaint);
-    // Right puff
-    canvas.drawCircle(Offset(centerX + size.x * 0.25, centerY), size.y * 0.25, cloudPaint);
-    // Top puff
-    canvas.drawCircle(Offset(centerX, centerY - size.y * 0.15), size.y * 0.2, cloudPaint);
+    // Main body (multiple circles for puffiness)
+    canvas.drawCircle(Offset(centerX, centerY), size.y * 0.4, mainPaint);
+    canvas.drawCircle(Offset(centerX - size.x * 0.3, centerY + 2), size.y * 0.3, mainPaint);
+    canvas.drawCircle(Offset(centerX + size.x * 0.3, centerY + 2), size.y * 0.3, mainPaint);
+    canvas.drawCircle(Offset(centerX - size.x * 0.15, centerY - size.y * 0.2), size.y * 0.25, mainPaint);
+    canvas.drawCircle(Offset(centerX + size.x * 0.15, centerY - size.y * 0.2), size.y * 0.25, mainPaint);
   }
 }
 
