@@ -48,11 +48,6 @@ class JungleRunnerGame extends FlameGame
   bool _highScoreBroken = false;
   String _selectedSkin = 'default';
 
-  // Upgrades and Boosters
-  int _shieldLevel = 1;
-  int _magnetLevel = 1;
-  bool _isDoubleCoinsActive = false;
-
   // Per-run stats for missions
   int _runShieldsUsed = 0;
   int _runMagnetsUsed = 0;
@@ -99,11 +94,6 @@ class JungleRunnerGame extends FlameGame
     _coinsCollected = await storageService.getTotalCoins();
     _hapticsEnabled = await storageService.getHapticsEnabled();
     _highScore = await storageService.getHighScore();
-
-    // Load upgrades and boosters
-    _shieldLevel = await storageService.getShieldLevel();
-    _magnetLevel = await storageService.getMagnetLevel();
-    _isDoubleCoinsActive = await storageService.isDoubleCoinsPurchased();
 
     // Initialize game components
     await _initializeGame();
@@ -205,7 +195,7 @@ class JungleRunnerGame extends FlameGame
 
   void _onHighScoreBroken() {
     // Visual feedback for breaking high score
-    _vibrate(HapticFeedback.mediumImpact);
+    _vibrate(() => HapticFeedback.mediumImpact());
     onHighScoreBroken?.call();
   }
 
@@ -271,9 +261,8 @@ class JungleRunnerGame extends FlameGame
   }
 
   void _collectCoin(Coin coin) {
-    final value = _isDoubleCoinsActive ? coin.coinValue * 2 : coin.coinValue;
-    _currentRunCoins += value;
-    _vibrate(HapticFeedback.lightImpact);
+    _currentRunCoins += coin.coinValue;
+    _vibrate(() => HapticFeedback.lightImpact());
 
     // Play coin collection sound
     AudioManager.instance.playCoinCollect();
@@ -286,7 +275,7 @@ class JungleRunnerGame extends FlameGame
   }
 
   void _collectPowerUp(PowerUp powerUp) {
-    _vibrate(HapticFeedback.mediumImpact);
+    _vibrate(() => HapticFeedback.mediumImpact());
 
     // Play power-up collection sound
     AudioManager.instance.playPowerUp();
@@ -300,16 +289,14 @@ class JungleRunnerGame extends FlameGame
 
     switch (powerUp.type) {
       case PowerUpType.shield:
-        final duration = GameConfig.shieldDurations[_shieldLevel] ?? powerUp.getDuration();
-        _player.activateShield(duration);
-        _shieldTimer = duration;
+        _player.activateShield(powerUp.getDuration());
+        _shieldTimer = powerUp.getDuration();
         _runShieldsUsed++;
         break;
 
       case PowerUpType.magnet:
-        final duration = GameConfig.magnetDurations[_magnetLevel] ?? powerUp.getDuration();
-        _player.activateMagnet(duration);
-        _magnetTimer = duration;
+        _player.activateMagnet(powerUp.getDuration());
+        _magnetTimer = powerUp.getDuration();
         _runMagnetsUsed++;
         break;
     }
@@ -317,7 +304,7 @@ class JungleRunnerGame extends FlameGame
 
   void _gameOver() {
     _gameState = GameState.gameOver;
-    _vibrate(HapticFeedback.heavyImpact);
+    _vibrate(() => HapticFeedback.heavyImpact());
 
     // Pause the engine to freeze the game state
     pauseEngine();
@@ -411,7 +398,7 @@ class JungleRunnerGame extends FlameGame
     } else {
       _player.jump();
     }
-    _vibrate(HapticFeedback.selectionClick);
+    _vibrate(() => HapticFeedback.selectionClick());
     _runJumps++;
     _lastTapTime = currentTime;
   }
@@ -517,7 +504,7 @@ class JungleRunnerGame extends FlameGame
   void handleSwipe(String direction) {
     if (direction == 'down') {
       handleSlide();
-      _vibrate(HapticFeedback.selectionClick);
+      _vibrate(() => HapticFeedback.selectionClick());
     }
   }
 
