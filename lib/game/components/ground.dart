@@ -17,7 +17,8 @@ class Ground extends Component {
 
   @override
   Future<void> onLoad() async {
-    final tileWidth = GameConfig.worldWidth / 3;
+    // Use an integer tile width to prevent sub-pixel seams when flooring
+    final tileWidth = (GameConfig.worldWidth / 3).ceilToDouble();
     final crisp = Paint()..filterQuality = FilterQuality.none;
 
     for (int i = 0; i < _tileCount; i++) {
@@ -34,7 +35,7 @@ class Ground extends Component {
   void update(double dt) {
     super.update(dt);
     
-    final tileWidth = GameConfig.worldWidth / 3;
+    final tileWidth = (GameConfig.worldWidth / 3).ceilToDouble();
     final totalLength = tileWidth * _tileCount; // distance before wrap
     final moveSpeed = _gameSpeed * GameConfig.baseScrollSpeed;
 
@@ -46,8 +47,12 @@ class Ground extends Component {
     // Shift by -bleed so tiles extend past viewport edges
     for (int i = 0; i < _tileCount; i++) {
       double x = i * tileWidth - _scrollOffset - _bleed;
-      // Wrap tiles that scroll too far left back to the right
-      if (x < -tileWidth - _bleed) x += totalLength;
+      // Wrap tiles only when they are completely off-screen (including bleed)
+      // A tile is at x. Its right edge is at x + width.
+      // Width is tileWidth + 2*bleed.
+      // So right edge is at x + tileWidth + 2*bleed.
+      // It is off-screen when x + tileWidth + 2*bleed < 0  => x < -tileWidth - 2*bleed.
+      if (x < -tileWidth - 2 * _bleed) x += totalLength;
       _tiles[i].position.x = x.floorToDouble();
     }
   }
