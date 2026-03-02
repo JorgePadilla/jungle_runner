@@ -1,17 +1,21 @@
 /// Game configuration with all tunable parameters
 class GameConfig {
-  // World settings
-  static const double worldWidth = 1000;
-  static const double worldHeight = 600;
-  static const double groundHeight = 100;
+  // World settings (portrait-friendly 400x720 virtual resolution)
+  static const double worldWidth = 400;
+  static const double worldHeight = 720;
+  static const double groundHeight = 80;
+  
+  // Distance conversion (pixels → meters)
+  static const double pixelsPerMeter = 50.0;
   
   // Player settings
   static const double playerWidth = 40;
   static const double playerHeight = 60;
-  static const double playerSpeed = 200; // Initial speed
-  static const double jumpVelocity = 400;
-  static const double doubleJumpVelocity = 350;
-  static const double gravity = 1200;
+  static const double playerSpeed = 150; // Initial scroll speed in px/s
+  static const double baseScrollSpeed = 1.0; // Multiplier (speed comes from difficulty manager)
+  static const double jumpVelocity = 350;
+  static const double doubleJumpVelocity = 300;
+  static const double gravity = 1000;
   static const double slideHeight = 30;
   static const double slideDuration = 0.8; // seconds
   
@@ -47,17 +51,17 @@ class GameConfig {
   static const double magnetRange = 100;
   
   // Difficulty progression
-  static const double speedIncreaseRate = 5; // speed increase per 100m
-  static const double maxSpeed = 400;
+  static const double speedIncreaseRate = 3; // speed increase per 100m (gentler)
+  static const double maxSpeed = 350;
   static const double obstacleFrequencyIncrease = 0.95; // multiply interval by this every 200m
   static const double minObstacleInterval = 1.0;
   
   // Scoring
-  static const double scoreMultiplier = 0.1; // score = distance * multiplier
+  static const double scoreMultiplier = 1.0; // score = distance_in_meters * multiplier
   
   // Game mechanics
   static const double despawnDistance = 200; // Distance behind player to remove objects
-  static const double spawnDistance = 800; // Distance ahead to spawn objects
+  static const double spawnDistance = 400; // Distance ahead to spawn objects (one screen width)
   
   // Audio
   static const double masterVolume = 0.7;
@@ -81,11 +85,11 @@ class GameConfig {
   };
   
   static const Map<String, String> skinNames = {
-    'default': 'Classic Monkey',
-    'golden': 'Golden Monkey',
-    'dark': 'Shadow Monkey',
-    'rainbow': 'Rainbow Monkey',
-    'ninja': 'Ninja Monkey',
+    'default': 'Ninja Frog',
+    'golden': 'Virtual Guy',
+    'dark': 'Mask Dude',
+    'rainbow': 'Pink Man',
+    'ninja': 'Ninja Frog',
   };
   
   // Daily rewards

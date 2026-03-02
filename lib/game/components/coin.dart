@@ -1,214 +1,140 @@
-import 'dart:math';
 import 'package:flame/components.dart';
+import 'package:flame/flame.dart';
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../config/game_config.dart';
-import '../../utils/constants.dart';
 
-/// Coin collectible component
-class Coin extends RectangleComponent {
-  double _gameSpeed = GameConfig.playerSpeed;
-  double _rotationAngle = 0;
-  double _bounceOffset = 0;
-  double _animationTimer = 0;
-  bool _isCollected = false;
+class Coin extends SpriteAnimationComponent {
+  double _gameSpeed = 1.0;
+  double _bounceTimer = 0;
+  final double _bounceAmplitude = 5.0;
+  final double _bounceFrequency = 2.0;
+  late double _baseY;
+  bool _collected = false;
+  bool _movingToPlayer = false;
+  Vector2? _playerPosition;
+
+  // Collection animation properties
+  bool _isCollecting = false;
   double _collectTimer = 0;
-  final int value = GameConfig.coinValue;
-  
-  Coin({required Vector2 position}) {
-    this.position = position;
-    size = Vector2(GameConfig.coinSize, GameConfig.coinSize);
+  double _initialScale = 1.0;
+  double _initialOpacity = 1.0;
+  Vector2? _collectStartPos;
+
+  final int coinValue = 10;
+
+  Coin({Vector2? position}) {
+    size = Vector2(GameConfig.coinSize.toDouble(), GameConfig.coinSize.toDouble());
     anchor = Anchor.center;
-    
-    // Add some random offset to animation timer for variety
-    _animationTimer = (position.x % 100) / 10;
+    if (position != null) {
+      this.position = position;
+      _baseY = position.y;
+    }
   }
-  
+
+  @override
+  Future<void> onLoad() async {
+    // Load coin animation from sprite sheet (17 frames)
+    final coinImage = await Flame.images.load('collectibles/coin_sheet.png');
+    animation = SpriteAnimation.fromFrameData(
+      coinImage,
+      SpriteAnimationData.sequenced(
+        amount: 17,
+        stepTime: 0.05,
+        textureSize: Vector2(32, 32),
+      ),
+    );
+
+    _baseY = position.y;
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
-    
-    if (_isCollected) {
-      _collectTimer += dt;
-      // Fly up and fade out
-      position.y -= 200 * dt;
-      scale = Vector2.all(1.0 + _collectTimer * 2);
-      if (_collectTimer >= 0.3) {
-        removeFromParent();
-      }
+
+    if (_collected && !_isCollecting) {
       return;
     }
-    
-    // Move coin left
-    position.x -= _gameSpeed * dt;
-    
-    // Update animations
-    _animationTimer += dt;
-    _rotationAngle += dt * 5; // Rotation speed
-    _bounceOffset = sin(_animationTimer * 4) * 3; // Gentle bounce
-    
-    // Apply bounce offset
-    position.y += _bounceOffset * dt * 10;
-  }
-  
-  @override
-  void render(Canvas canvas) {
-    canvas.save();
-    
-    if (_isCollected) {
-      // Fade out effect
-      final opacity = (1.0 - (_collectTimer / 0.3)).clamp(0.0, 1.0);
-      canvas.saveLayer(
-        Rect.fromLTWH(0, 0, size.x, size.y),
-        Paint()..color = Colors.white.withOpacity(opacity),
-      );
+
+    if (_isCollecting) {
+      _collectTimer += dt;
+
+      // Scale animation: 1.0 -> 1.5 over 0.2s
+      const scaleUpDuration = 0.2;
+      if (_collectTimer <= scaleUpDuration) {
+        final progress = _collectTimer / scaleUpDuration;
+        scale = Vector2.all(_initialScale + progress * 0.5);
+      }
+
+      // Opacity fade: 1.0 -> 0.0 over 0.3s
+      const fadeDuration = 0.3;
+      if (_collectTimer <= fadeDuration) {
+        final progress = _collectTimer / fadeDuration;
+        opacity = _initialOpacity * (1.0 - progress);
+      }
+
+      // Move upward slightly during animation
+      if (_collectStartPos != null) {
+        const upwardSpeed = 50.0;
+        position.y = _collectStartPos!.y - upwardSpeed * _collectTimer;
+      }
+
+      // Remove when animation is complete
+      if (_collectTimer >= fadeDuration) {
+        removeFromParent();
+      }
+
+      return;
     }
 
-    // Apply rotation for spinning effect
-    canvas.translate(size.x / 2, size.y / 2);
-    canvas.rotate(_rotationAngle);
-    canvas.translate(-size.x / 2, -size.y / 2);
-    
-    // Draw coin with gradient
-    final coinGradient = RadialGradient(
-      center: Alignment.topLeft,
-      radius: 1.0,
-      colors: [
-        const Color(0xFFFFD700), // Bright gold
-        const Color(0xFFDAA520), // Golden rod
-        const Color(0xFFB8860B), // Dark golden rod
-      ],
-      stops: const [0.0, 0.7, 1.0],
-    );
-    
-    final coinPaint = Paint()
-      ..shader = coinGradient.createShader(
-        Rect.fromLTWH(0, 0, size.x, size.y),
-      );
-    
-    // Main coin body (circle)
-    canvas.drawCircle(
-      Offset(size.x / 2, size.y / 2),
-      size.x / 2,
-      coinPaint,
-    );
-    
-    // Inner circle for depth
-    final innerPaint = Paint()
-      ..color = const Color(0xFFFFE55C)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    
-    canvas.drawCircle(
-      Offset(size.x / 2, size.y / 2),
-      size.x / 2 - 3,
-      innerPaint,
-    );
-    
-    // Draw coin symbol (dollar sign or custom symbol)
-    _drawCoinSymbol(canvas);
-    
-    // Add shine effect
-    _drawShineEffect(canvas);
-    
-    if (_isCollected) {
-      canvas.restore();
-    }
+    // Update bounce animation
+    _bounceTimer += dt;
+    final bounceOffset = math.sin(_bounceTimer * _bounceFrequency * 2 * math.pi) * _bounceAmplitude;
+    position.y = _baseY + bounceOffset;
 
-    canvas.restore();
-    
-    // TODO: Replace with actual coin sprite
-  }
-  
-  void _drawCoinSymbol(Canvas canvas) {
-    final symbolPaint = Paint()
-      ..color = const Color(0xFFB8860B)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    
-    final centerX = size.x / 2;
-    final centerY = size.y / 2;
-    
-    // Draw a simple "C" for coin
-    final symbolPath = Path();
-    final rect = Rect.fromCenter(
-      center: Offset(centerX, centerY),
-      width: size.x * 0.6,
-      height: size.y * 0.6,
-    );
-    
-    symbolPath.addArc(rect, pi / 2, pi); // Half circle
-    canvas.drawPath(symbolPath, symbolPaint);
-    
-    // Add horizontal lines for currency symbol
-    canvas.drawLine(
-      Offset(centerX - 2, centerY - size.y * 0.2),
-      Offset(centerX + 2, centerY - size.y * 0.2),
-      symbolPaint,
-    );
-    canvas.drawLine(
-      Offset(centerX - 2, centerY + size.y * 0.2),
-      Offset(centerX + 2, centerY + size.y * 0.2),
-      symbolPaint,
-    );
-  }
-  
-  void _drawShineEffect(Canvas canvas) {
-    // Animated shine effect
-    final shineProgress = (_animationTimer * 2) % 3.0;
-    if (shineProgress < 1.0) {
-      final shinePaint = Paint()
-        ..color = Colors.white.withOpacity(0.6 * (1.0 - shineProgress))
-        ..strokeWidth = 2;
-      
-      final shineOffset = shineProgress * size.x;
-      canvas.drawLine(
-        Offset(shineOffset - size.x * 0.3, 0),
-        Offset(shineOffset + size.x * 0.3, size.y),
-        shinePaint,
-      );
+    if (_movingToPlayer && _playerPosition != null) {
+      // Move towards player when magnet is active
+      final direction = (_playerPosition! - position).normalized();
+      const magnetSpeed = 300.0;
+      position += direction * magnetSpeed * dt;
+    } else {
+      // Normal scrolling movement
+      position.x -= _gameSpeed * GameConfig.baseScrollSpeed * dt;
     }
   }
-  
-  /// Update game speed
-  void updateSpeed(double newSpeed) {
-    _gameSpeed = newSpeed;
+
+  void updateSpeed(double speed) {
+    _gameSpeed = speed;
   }
-  
-  /// Check if coin is off screen
-  bool get isOffScreen => position.x + size.x < -50;
-  
-  /// Get collision bounds
-  Rect get bounds => Rect.fromLTWH(
-    position.x - size.x / 2,
-    position.y - size.y / 2,
-    size.x,
-    size.y,
-  );
-  
-  /// Collect the coin (plays animation and marks as collected)
+
+  bool get isOffScreen => position.x + size.x < 0;
+
+  /// Collection bounds -- 50% larger than visual for generous pickup.
+  Rect get bounds {
+    final expand = size.x * 0.5; // 50% expansion
+    return Rect.fromLTWH(
+      position.x - size.x / 2 - expand,
+      position.y - size.y / 2 - expand,
+      size.x + expand * 2,
+      size.y + expand * 2,
+    );
+  }
+
   void collect() {
-    if (_isCollected) return;
-    _isCollected = true;
+    if (_collected || _isCollecting) return;
+
+    _collected = true;
+    _isCollecting = true;
     _collectTimer = 0;
+    _collectStartPos = position.clone();
+    _initialScale = scale.x;
+    _initialOpacity = opacity;
   }
-  
-  /// Check if coin is collected
-  bool get isCollected => _isCollected;
-  
-  /// Get coin value
-  int get coinValue => value;
-  
-  /// Move coin towards player (for magnet effect)
-  void moveTowardsPlayer(Vector2 playerPosition, double magnetStrength, double dt) {
-    if (_isCollected) return;
-    
-    final direction = playerPosition - position;
-    final distance = direction.length;
-    
-    if (distance > 0) {
-      direction.normalize();
-      final moveSpeed = magnetStrength * dt * (100 / max(distance, 10));
-      position += direction * moveSpeed;
-    }
+
+  void moveTowardsPlayer(Vector2 playerPos, double magnetRange, double dt) {
+    _movingToPlayer = true;
+    _playerPosition = playerPos;
   }
+
+  bool get isCollected => _collected;
 }

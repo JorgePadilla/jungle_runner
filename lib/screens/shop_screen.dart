@@ -1,10 +1,15 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../utils/constants.dart';
 import '../services/storage_service.dart';
 import '../game/config/game_config.dart';
+import '../widgets/glass_card.dart';
+import '../widgets/animated_button.dart';
 
-/// Shop screen for purchasing character skins
+/// Fully redesigned character shop with carousel, purchase bottom sheet,
+/// animated coin counter, and celebration effects.
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
 
@@ -12,185 +17,214 @@ class ShopScreen extends StatefulWidget {
   State<ShopScreen> createState() => _ShopScreenState();
 }
 
-class _ShopScreenState extends State<ShopScreen>
-    with TickerProviderStateMixin {
+class _ShopScreenState extends State<ShopScreen> with TickerProviderStateMixin {
   late StorageService _storageService;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  
+
+  // ── Animations ──────────────────────────────────────────────────
+  late AnimationController _entranceController;
+  late AnimationController _coinBounceController;
+  late AnimationController _celebrationController;
+  late Animation<double> _entranceFade;
+  late Animation<Offset> _headerSlide;
+  late Animation<Offset> _bodySlide;
+  late Animation<double> _coinBounce;
+
+  // ── State ───────────────────────────────────────────────────────
   int _totalCoins = 0;
+  int _displayedCoins = 0;
   List<String> _unlockedSkins = [];
   String _selectedSkin = 'default';
   bool _isLoading = true;
-  
+  String? _celebratingSkinId;
+
+  // Sorted skin ids – featured (most expensive) first.
+  late List<String> _sortedSkinIds;
+
   @override
   void initState() {
     super.initState();
-    _initializeData();
+    _prepareSkinOrder();
     _setupAnimations();
+    _initializeData();
   }
-  
+
+  // ── Skin sort (featured first, then by price desc) ────────────
+  void _prepareSkinOrder() {
+    final entries = GameConfig.skinPrices.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    _sortedSkinIds = entries.map((e) => e.key).toList();
+  }
+
+  // ── Animations setup ──────────────────────────────────────────
   void _setupAnimations() {
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 600),
+    _entranceController = AnimationController(
       vsync: this,
+      duration: const Duration(milliseconds: 800),
     );
-    
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
+    _entranceFade = CurvedAnimation(
+      parent: _entranceController,
       curve: Curves.easeOut,
+    );
+    _headerSlide = Tween<Offset>(
+      begin: const Offset(0, -0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.0, 0.5, curve: Curves.easeOutCubic),
     ));
-    
-    _animationController.forward();
+    _bodySlide = Tween<Offset>(
+      begin: const Offset(0, 0.15),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic),
+    ));
+
+    _coinBounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _coinBounce = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.9), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.0), weight: 30),
+    ]).animate(CurvedAnimation(
+      parent: _coinBounceController,
+      curve: Curves.easeInOut,
+    ));
+
+    _celebrationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
   }
-  
+
+  // ── Data loading ──────────────────────────────────────────────
   Future<void> _initializeData() async {
     _storageService = await StorageService.getInstance();
-    
     _totalCoins = await _storageService.getTotalCoins();
+    _displayedCoins = _totalCoins;
     _unlockedSkins = await _storageService.getUnlockedSkins();
     _selectedSkin = await _storageService.getSelectedSkin();
-    
+
     if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
+      _entranceController.forward();
     }
   }
-  
+
   @override
   void dispose() {
-    _animationController.dispose();
+    _entranceController.dispose();
+    _coinBounceController.dispose();
+    _celebrationController.dispose();
     super.dispose();
   }
-  
+
+  // ════════════════════════════════════════════════════════════════
+  //  BUILD
+  // ════════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF87CEEB), // Sky blue
-              Color(0xFF228B22), // Forest green
-              Color(0xFF006400), // Dark green
-            ],
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: GameConstants.backgroundGradient),
         child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              _buildHeader(),
-              
-              // Main content
-              Expanded(
-                child: _isLoading 
-                    ? const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      )
-                    : _buildShopContent(),
-              ),
-            ],
-          ),
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: GameConstants.accent))
+              : FadeTransition(
+                  opacity: _entranceFade,
+                  child: Column(
+                    children: [
+                      SlideTransition(position: _headerSlide, child: _buildHeader()),
+                      const SizedBox(height: GameConstants.spacingSm),
+                      Expanded(
+                        child: SlideTransition(
+                          position: _bodySlide,
+                          child: _buildBody(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
   }
-  
+
+  // ── Header ────────────────────────────────────────────────────
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.all(GameConstants.padding),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          GameConstants.spacingSm, GameConstants.spacingMd,
+          GameConstants.spacingMd, 0),
       child: Row(
         children: [
-          // Back button
-          IconButton(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 30),
-          ),
-          
+          // Back
+          _backButton(),
+          const SizedBox(width: GameConstants.spacingSm),
           // Title
-          const Expanded(
+          Expanded(
             child: Text(
-              'MONKEY SHOP',
+              'CHARACTER SHOP',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+              overflow: TextOverflow.ellipsis,
+              style: GameConstants.displayMedium.copyWith(fontSize: 22),
             ),
           ),
-          
-          // Coins display
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.circle, color: GameConstants.gold, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  _totalCoins.toString(),
-                  style: GameConstants.hudStyle,
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(width: GameConstants.spacingSm),
+          // Coin badge
+          _coinBadge(),
         ],
       ),
     );
   }
-  
-  Widget _buildShopContent() {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Padding(
-        padding: const EdgeInsets.all(GameConstants.padding),
-        child: Column(
+
+  Widget _backButton() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).pop();
+      },
+      child: GlassCard(
+        padding: const EdgeInsets.all(10),
+        borderRadius: GameConstants.radiusMd,
+        child: const Icon(Icons.arrow_back_rounded,
+            color: GameConstants.onSurface, size: 24),
+      ),
+    );
+  }
+
+  Widget _coinBadge() {
+    return MultiAnimatedBuilder(
+      animation: _coinBounce,
+      builder: (context, child) => Transform.scale(
+        scale: _coinBounce.value,
+        child: child,
+      ),
+      child: GlassCard(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        borderRadius: GameConstants.radiusFull,
+        glowBorder: true,
+        glowColor: GameConstants.coinGold,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Shop description
-            Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Text(
-                'Customize your monkey! Unlock new skins with coins collected during your jungle adventures.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.white,
-                  height: 1.4,
-                ),
-              ),
-            ),
-            
-            // Skins grid
-            Expanded(
-              child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 15,
-                  mainAxisSpacing: 15,
-                  childAspectRatio: 0.85,
-                ),
-                itemCount: GameConfig.skinNames.length,
-                itemBuilder: (context, index) {
-                  final skinId = GameConfig.skinNames.keys.elementAt(index);
-                  return _buildSkinCard(skinId);
-                },
+            const Icon(Icons.monetization_on_rounded,
+                color: GameConstants.coinGold, size: 22),
+            const SizedBox(width: 6),
+            AnimatedSwitcher(
+              duration: GameConstants.durationFast,
+              transitionBuilder: (child, anim) =>
+                  ScaleTransition(scale: anim, child: child),
+              child: Text(
+                _displayedCoins.toString(),
+                key: ValueKey<int>(_displayedCoins),
+                style: GameConstants.labelLarge
+                    .copyWith(color: GameConstants.coinGold, fontSize: 16),
               ),
             ),
           ],
@@ -198,344 +232,758 @@ class _ShopScreenState extends State<ShopScreen>
       ),
     );
   }
-  
-  Widget _buildSkinCard(String skinId) {
-    final skinName = GameConfig.skinNames[skinId]!;
-    final skinPrice = GameConfig.skinPrices[skinId]!;
-    final isUnlocked = _unlockedSkins.contains(skinId);
-    final isSelected = _selectedSkin == skinId;
-    final canAfford = _totalCoins >= skinPrice;
-    
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: isSelected 
-            ? GameConstants.gold.withOpacity(0.8)
-            : Colors.white.withOpacity(0.9),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: isSelected ? GameConstants.gold : Colors.transparent,
-          width: 3,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+
+  // ── Body ──────────────────────────────────────────────────────
+  Widget _buildBody() {
+    return Column(
+      children: [
+        // Subtitle
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: GameConstants.spacingXl,
+              vertical: GameConstants.spacingSm),
+          child: Text(
+            'Choose your hero for the jungle adventure!',
+            textAlign: TextAlign.center,
+            style: GameConstants.bodyMedium.copyWith(fontSize: 15),
           ),
-        ],
+        ),
+        const SizedBox(height: GameConstants.spacingSm),
+        // Carousel
+        Expanded(child: _buildCarousel()),
+      ],
+    );
+  }
+
+  // ── Carousel ──────────────────────────────────────────────────
+  Widget _buildCarousel() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.maxWidth * 0.62;
+        final viewFraction = cardWidth / constraints.maxWidth;
+        return PageView.builder(
+          controller: PageController(viewportFraction: viewFraction),
+          itemCount: _sortedSkinIds.length,
+          physics: const BouncingScrollPhysics(),
+          itemBuilder: (context, index) {
+            final skinId = _sortedSkinIds[index];
+            final isFeatured = index == 0; // Most expensive
+            return Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: GameConstants.spacingSm,
+                  vertical: GameConstants.spacingMd),
+              child: _SkinCard(
+                skinId: skinId,
+                isFeatured: isFeatured,
+                isUnlocked: _unlockedSkins.contains(skinId),
+                isSelected: _selectedSkin == skinId,
+                canAfford: _totalCoins >= (GameConfig.skinPrices[skinId] ?? 0),
+                celebrating: _celebratingSkinId == skinId,
+                celebrationAnimation: _celebrationController,
+                onTap: () => _onSkinTapped(skinId),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  PURCHASE LOGIC
+  // ════════════════════════════════════════════════════════════════
+
+  Future<void> _onSkinTapped(String skinId) async {
+    if (skinId == _selectedSkin) return;
+
+    final isUnlocked = _unlockedSkins.contains(skinId);
+    final price = GameConfig.skinPrices[skinId] ?? 0;
+    final canAfford = _totalCoins >= price;
+
+    if (isUnlocked) {
+      await _selectSkin(skinId);
+    } else if (price == 0) {
+      await _storageService.unlockSkin(skinId);
+      await _selectSkin(skinId);
+    } else if (canAfford) {
+      _showPurchaseSheet(skinId, price);
+    } else {
+      _showInsufficientSheet(price);
+    }
+  }
+
+  Future<void> _selectSkin(String skinId) async {
+    HapticFeedback.mediumImpact();
+    await _storageService.setSelectedSkin(skinId);
+    await _refreshData();
+  }
+
+  Future<void> _purchaseSkin(String skinId, int price) async {
+    final success = await _storageService.spendCoins(price);
+    if (!success) return;
+
+    await _storageService.unlockSkin(skinId);
+    await _storageService.setSelectedSkin(skinId);
+
+    // Animate coin decrease
+    _animateCoinDecrease(price);
+
+    // Celebration
+    setState(() => _celebratingSkinId = skinId);
+    _celebrationController.forward(from: 0);
+    HapticFeedback.heavyImpact();
+
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted) setState(() => _celebratingSkinId = null);
+
+    await _refreshData();
+  }
+
+  void _animateCoinDecrease(int amount) {
+    final start = _displayedCoins;
+    final end = start - amount;
+    const steps = 12;
+    final stepDuration =
+        Duration(milliseconds: (400 / steps).round());
+    int current = 0;
+
+    void tick() {
+      current++;
+      if (!mounted) return;
+      final progress = current / steps;
+      setState(() {
+        _displayedCoins = (start - (amount * progress)).round();
+      });
+      _coinBounceController.forward(from: 0);
+      if (current < steps) {
+        Future.delayed(stepDuration, tick);
+      } else {
+        setState(() => _displayedCoins = end);
+      }
+    }
+
+    tick();
+  }
+
+  Future<void> _refreshData() async {
+    _totalCoins = await _storageService.getTotalCoins();
+    _displayedCoins = _totalCoins;
+    _unlockedSkins = await _storageService.getUnlockedSkins();
+    _selectedSkin = await _storageService.getSelectedSkin();
+    if (mounted) setState(() {});
+  }
+
+  // ── Purchase bottom sheet ─────────────────────────────────────
+  void _showPurchaseSheet(String skinId, int price) {
+    final name = GameConfig.skinNames[skinId] ?? skinId;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _PurchaseSheet(
+        skinName: name,
+        skinId: skinId,
+        price: price,
+        coins: _totalCoins,
+        onConfirm: () {
+          Navigator.of(ctx).pop();
+          _purchaseSkin(skinId, price);
+        },
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(15),
-          onTap: () => _onSkinTapped(skinId, isUnlocked, canAfford, skinPrice),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
+    );
+  }
+
+  // ── Insufficient coins sheet ──────────────────────────────────
+  void _showInsufficientSheet(int price) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _InsufficientSheet(
+        price: price,
+        coins: _totalCoins,
+        onPlayMore: () {
+          Navigator.of(ctx).pop();
+          Navigator.of(context).pop(); // back to game
+        },
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  _SkinCard  –  individual character showcase card
+// ══════════════════════════════════════════════════════════════════
+
+class _SkinCard extends StatefulWidget {
+  final String skinId;
+  final bool isFeatured;
+  final bool isUnlocked;
+  final bool isSelected;
+  final bool canAfford;
+  final bool celebrating;
+  final AnimationController celebrationAnimation;
+  final VoidCallback onTap;
+
+  const _SkinCard({
+    required this.skinId,
+    required this.isFeatured,
+    required this.isUnlocked,
+    required this.isSelected,
+    required this.canAfford,
+    required this.celebrating,
+    required this.celebrationAnimation,
+    required this.onTap,
+  });
+
+  @override
+  State<_SkinCard> createState() => _SkinCardState();
+}
+
+class _SkinCardState extends State<_SkinCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _floatController;
+  late Animation<double> _floatAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+    _floatAnimation = Tween<double>(begin: -4, end: 4).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = GameConfig.skinNames[widget.skinId] ?? widget.skinId;
+    final price = GameConfig.skinPrices[widget.skinId] ?? 0;
+    final isLocked = !widget.isUnlocked && price > 0;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Card
+          GlassCard(
+            borderRadius: GameConstants.radiusXl,
+            glowBorder: widget.isSelected,
+            glowColor: GameConstants.coinGold,
+            borderColor: widget.isSelected
+                ? GameConstants.coinGold
+                : isLocked
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.white.withValues(alpha: 0.15),
+            borderWidth: widget.isSelected ? 2.0 : 1.0,
+            padding: const EdgeInsets.all(GameConstants.spacingMd),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Skin preview
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: _getSkinColor(skinId),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.black, width: 2),
-                  ),
-                  child: _buildSkinPreview(skinId),
-                ),
-                
-                const SizedBox(height: 12),
-                
-                // Skin name
+                const SizedBox(height: GameConstants.spacingSm),
+                // Character preview
+                Expanded(child: _preview(isLocked)),
+                const SizedBox(height: GameConstants.spacingMd),
+                // Name
                 Text(
-                  skinName,
+                  name,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: isSelected ? Colors.white : Colors.black87,
+                  style: GameConstants.headlineMedium.copyWith(
+                    fontSize: 18,
+                    color: isLocked
+                        ? GameConstants.onSurfaceDim
+                        : GameConstants.onSurface,
                   ),
                 ),
-                
-                const SizedBox(height: 8),
-                
-                // Status/Price/Select button
-                _buildSkinButton(skinId, isUnlocked, isSelected, canAfford, skinPrice),
+                const SizedBox(height: GameConstants.spacingSm),
+                // Status / action
+                _statusArea(price, isLocked),
+                const SizedBox(height: GameConstants.spacingXs),
               ],
+            ),
+          ),
+
+          // Featured badge
+          if (widget.isFeatured)
+            Positioned(
+              top: -10,
+              right: 12,
+              child: _featuredBadge(),
+            ),
+
+          // Lock overlay
+          if (isLocked) _lockOverlay(),
+
+          // Celebration sparkles
+          if (widget.celebrating)
+            Positioned.fill(child: _CelebrationOverlay(
+                animation: widget.celebrationAnimation)),
+        ],
+      ),
+    );
+  }
+
+  // ── Preview ─────────────────────────────────────────────────
+  Widget _preview(bool isLocked) {
+    final color = _skinColor(widget.skinId);
+    return MultiAnimatedBuilder(
+      animation: _floatAnimation,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, _floatAnimation.value),
+        child: child,
+      ),
+      child: AnimatedOpacity(
+        duration: GameConstants.durationMedium,
+        opacity: isLocked ? 0.45 : 1.0,
+        child: Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.25),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withValues(alpha: 0.6), width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.25),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Image.asset(
+              'assets/images/player/jump_${widget.skinId}.png',
+              width: 60,
+              height: 60,
+              filterQuality: FilterQuality.none,
+              errorBuilder: (_, __, ___) => Text(
+                _skinEmoji(widget.skinId),
+                style: const TextStyle(fontSize: 40),
+              ),
             ),
           ),
         ),
       ),
     );
   }
-  
-  Color _getSkinColor(String skinId) {
-    switch (skinId) {
+
+  // ── Status row ────────────────────────────────────────────────
+  Widget _statusArea(int price, bool isLocked) {
+    if (widget.isSelected) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: GameConstants.goldGradient,
+          borderRadius: BorderRadius.circular(GameConstants.radiusFull),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 16),
+            SizedBox(width: 6),
+            Text('EQUIPPED',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 1)),
+          ],
+        ),
+      );
+    }
+
+    if (widget.isUnlocked) {
+      return AnimatedButton(
+        label: 'SELECT',
+        height: 38,
+        fontSize: 12,
+        borderRadius: GameConstants.radiusFull,
+        gradient: GameConstants.accentGradient,
+        onTap: widget.onTap,
+        haptic: true,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      );
+    }
+
+    // Locked – show price badge
+    if (price == 0) {
+      return AnimatedButton(
+        label: 'FREE',
+        height: 38,
+        fontSize: 12,
+        borderRadius: GameConstants.radiusFull,
+        color: GameConstants.success,
+        onTap: widget.onTap,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: widget.canAfford
+            ? GameConstants.coinGold.withValues(alpha: 0.2)
+            : Colors.grey.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(GameConstants.radiusFull),
+        border: Border.all(
+          color: widget.canAfford
+              ? GameConstants.coinGold.withValues(alpha: 0.5)
+              : Colors.grey.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.monetization_on_rounded,
+              color: widget.canAfford
+                  ? GameConstants.coinGold
+                  : GameConstants.onSurfaceDim,
+              size: 16),
+          const SizedBox(width: 6),
+          Text(
+            price.toString(),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: widget.canAfford
+                  ? GameConstants.coinGold
+                  : GameConstants.onSurfaceDim,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Featured badge ────────────────────────────────────────────
+  Widget _featuredBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        gradient: GameConstants.goldGradient,
+        borderRadius: BorderRadius.circular(GameConstants.radiusSm),
+        boxShadow: [
+          BoxShadow(
+            color: GameConstants.coinGold.withValues(alpha: 0.4),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, color: Colors.white, size: 14),
+          SizedBox(width: 3),
+          Text(
+            'FEATURED',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Lock overlay ──────────────────────────────────────────────
+  Widget _lockOverlay() {
+    return Positioned.fill(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(GameConstants.radiusXl),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.25),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.lock_rounded,
+                  color: Colors.white70, size: 28),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────
+  Color _skinColor(String id) {
+    switch (id) {
       case 'golden':
-        return GameConstants.gold;
+        return const Color(0xFFFFD700);
       case 'dark':
-        return const Color(0xFF2F2F2F);
+        return const Color(0xFF6C5CE7);
       case 'rainbow':
-        return Colors.purple[300]!; // Simplified for preview
+        return const Color(0xFFFF6B81);
       case 'ninja':
-        return const Color(0xFF1a1a1a);
+        return const Color(0xFF2ED573);
       default:
-        return GameConstants.brown;
+        return const Color(0xFF00D4AA);
     }
   }
-  
-  Widget _buildSkinPreview(String skinId) {
-    // Simple preview of the monkey character
-    return Center(
+
+  String _skinEmoji(String id) {
+    switch (id) {
+      case 'golden':
+        return '🏃';
+      case 'dark':
+        return '🎭';
+      case 'rainbow':
+        return '💃';
+      case 'ninja':
+        return '🐸';
+      default:
+        return '🐸';
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Celebration overlay  (sparkle particles)
+// ══════════════════════════════════════════════════════════════════
+
+class _CelebrationOverlay extends StatelessWidget {
+  final AnimationController animation;
+  const _CelebrationOverlay({required this.animation});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiAnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final progress = animation.value;
+        return IgnorePointer(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(GameConstants.radiusXl),
+            child: CustomPaint(
+              painter: _SparklePainter(progress),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SparklePainter extends CustomPainter {
+  final double progress;
+  _SparklePainter(this.progress);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rng = Random(42);
+    final count = 18;
+    for (int i = 0; i < count; i++) {
+      final startX = rng.nextDouble() * size.width;
+      final startY = size.height * 0.5 + rng.nextDouble() * size.height * 0.3;
+      final dx = (rng.nextDouble() - 0.5) * size.width * 0.6;
+      final dy = -rng.nextDouble() * size.height * 0.8;
+      final x = startX + dx * progress;
+      final y = startY + dy * progress;
+      final opacity = (1 - progress).clamp(0.0, 1.0);
+      final radius = 2.0 + rng.nextDouble() * 3.0;
+
+      final colors = [
+        const Color(0xFFFFD700),
+        const Color(0xFFFF6B81),
+        const Color(0xFF00D4AA),
+        const Color(0xFF6C5CE7),
+        Colors.white,
+      ];
+      final color =
+          colors[i % colors.length].withValues(alpha: opacity * 0.8);
+      canvas.drawCircle(Offset(x, y), radius * (1 - progress * 0.3),
+          Paint()..color = color);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SparklePainter old) => old.progress != progress;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  _PurchaseSheet  –  bottom sheet for confirming purchase
+// ══════════════════════════════════════════════════════════════════
+
+class _PurchaseSheet extends StatelessWidget {
+  final String skinName;
+  final String skinId;
+  final int price;
+  final int coins;
+  final VoidCallback onConfirm;
+
+  const _PurchaseSheet({
+    required this.skinName,
+    required this.skinId,
+    required this.price,
+    required this.coins,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: GameConstants.surface,
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(GameConstants.radiusXl)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Simple face representation
+          // Handle
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: GameConstants.spacingLg),
+          Text('Unlock $skinName?',
+              style: GameConstants.headlineMedium),
+          const SizedBox(height: GameConstants.spacingMd),
+          // Price row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                  shape: BoxShape.circle,
-                ),
-              ),
+              const Icon(Icons.monetization_on_rounded,
+                  color: GameConstants.coinGold, size: 28),
               const SizedBox(width: 8),
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Container(
-            width: 12,
-            height: 6,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  Widget _buildSkinButton(
-    String skinId, 
-    bool isUnlocked, 
-    bool isSelected, 
-    bool canAfford, 
-    int price,
-  ) {
-    if (isSelected) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'EQUIPPED',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
-        ),
-      );
-    }
-    
-    if (!isUnlocked) {
-      if (price == 0) {
-        // Free skin (default)
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: GameConstants.primaryGreen,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Text(
-            'FREE',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-        );
-      } else {
-        // Paid skin
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: canAfford ? GameConstants.gold : Colors.grey,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.circle, color: Colors.white, size: 12),
-              const SizedBox(width: 4),
               Text(
                 price.toString(),
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                style: GameConstants.displayMedium
+                    .copyWith(color: GameConstants.coinGold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Balance after: ${coins - price} coins',
+            style: GameConstants.bodyMedium,
+          ),
+          const SizedBox(height: GameConstants.spacingLg),
+          // Buttons
+          Row(
+            children: [
+              Expanded(
+                child: AnimatedButton(
+                  label: 'CANCEL',
+                  color: GameConstants.surfaceLight,
+                  textColor: GameConstants.onSurfaceDim,
+                  height: 48,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: GameConstants.spacingMd),
+              Expanded(
+                child: AnimatedButton(
+                  label: 'PURCHASE',
+                  icon: Icons.monetization_on_rounded,
+                  gradient: GameConstants.goldGradient,
+                  textColor: Colors.white,
+                  height: 48,
+                  pulse: true,
+                  onTap: onConfirm,
                 ),
               ),
             ],
           ),
-        );
-      }
-    } else {
-      // Unlocked but not selected
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: GameConstants.primaryGreen,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'SELECT',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-      );
-    }
-  }
-  
-  Future<void> _onSkinTapped(
-    String skinId, 
-    bool isUnlocked, 
-    bool canAfford, 
-    int price,
-  ) async {
-    if (skinId == _selectedSkin) return; // Already selected
-    
-    if (!isUnlocked) {
-      if (price == 0) {
-        // Free skin, just unlock and select
-        await _storageService.unlockSkin(skinId);
-        await _storageService.setSelectedSkin(skinId);
-        await _refreshData();
-      } else if (canAfford) {
-        // Show purchase confirmation
-        _showPurchaseDialog(skinId, price);
-      } else {
-        // Can't afford
-        _showInsufficientCoinsDialog(price);
-      }
-    } else {
-      // Just select the skin
-      await _storageService.setSelectedSkin(skinId);
-      await _refreshData();
-    }
-  }
-  
-  void _showPurchaseDialog(String skinId, int price) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Purchase ${GameConfig.skinNames[skinId]}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Do you want to purchase this skin for $price coins?'),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.circle, color: GameConstants.gold, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  '$price',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: GameConstants.gold,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await _purchaseSkin(skinId, price);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: GameConstants.gold,
-            ),
-            child: const Text('Purchase', style: TextStyle(color: Colors.white)),
-          ),
         ],
       ),
     );
   }
-  
-  void _showInsufficientCoinsDialog(int price) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Insufficient Coins'),
-        content: Text(
-          'You need $price coins to purchase this skin. Keep playing to earn more coins!',
-        ),
-        actions: [
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  _InsufficientSheet  –  not enough coins
+// ══════════════════════════════════════════════════════════════════
+
+class _InsufficientSheet extends StatelessWidget {
+  final int price;
+  final int coins;
+  final VoidCallback onPlayMore;
+
+  const _InsufficientSheet({
+    required this.price,
+    required this.coins,
+    required this.onPlayMore,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: GameConstants.surface,
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(GameConstants.radiusXl)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: GameConstants.spacingLg),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: GameConstants.danger.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.sentiment_dissatisfied_rounded,
+                color: GameConstants.danger, size: 40),
+          ),
+          const SizedBox(height: GameConstants.spacingMd),
+          Text('Not Enough Coins',
+              style: GameConstants.headlineMedium
+                  .copyWith(color: GameConstants.danger)),
+          const SizedBox(height: 8),
+          Text(
+            'You need ${price - coins} more coins.',
+            style: GameConstants.bodyMedium,
+          ),
+          const SizedBox(height: GameConstants.spacingLg),
+          AnimatedButton(
+            label: 'PLAY MORE',
+            subtitle: 'Earn coins in the jungle!',
+            icon: Icons.play_arrow_rounded,
+            gradient: GameConstants.accentGradient,
+            pulse: true,
+            height: 48,
+            width: double.infinity,
+            onTap: onPlayMore,
+          ),
+          const SizedBox(height: GameConstants.spacingSm),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text('Maybe later',
+                style: GameConstants.bodyMedium
+                    .copyWith(color: GameConstants.onSurfaceDim)),
           ),
         ],
       ),
     );
-  }
-  
-  Future<void> _purchaseSkin(String skinId, int price) async {
-    final success = await _storageService.spendCoins(price);
-    if (success) {
-      await _storageService.unlockSkin(skinId);
-      await _storageService.setSelectedSkin(skinId);
-      await _refreshData();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${GameConfig.skinNames[skinId]} purchased! 🎉'),
-            backgroundColor: GameConstants.primaryGreen,
-          ),
-        );
-      }
-    }
-  }
-  
-  Future<void> _refreshData() async {
-    _totalCoins = await _storageService.getTotalCoins();
-    _unlockedSkins = await _storageService.getUnlockedSkins();
-    _selectedSkin = await _storageService.getSelectedSkin();
-    
-    if (mounted) {
-      setState(() {});
-    }
   }
 }

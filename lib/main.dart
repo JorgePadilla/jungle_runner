@@ -3,10 +3,14 @@ import 'package:flutter/services.dart';
 
 import 'services/ad_service.dart';
 import 'services/storage_service.dart';
+import 'services/play_games_service.dart';
+import 'game/managers/audio_manager.dart';
 import 'screens/main_menu_screen.dart';
 import 'screens/game_screen.dart';
 import 'screens/shop_screen.dart';
+import 'screens/settings_screen.dart';
 import 'utils/constants.dart';
+import 'utils/page_transitions.dart';
 
 void main() async {
   // Ensure Flutter is initialized
@@ -42,6 +46,12 @@ Future<void> _initializeServices() async {
     // Initialize storage service
     await StorageService.getInstance();
     
+    // Initialize audio (preload SFX so menu music + sounds are ready)
+    await AudioManager.instance.init();
+    
+    // Initialize Play Games (sign in silently)
+    await PlayGamesService.instance.init();
+    
     print('Services initialized successfully');
   } catch (e) {
     print('Error initializing services: $e');
@@ -58,17 +68,22 @@ class JungleRunnerApp extends StatelessWidget {
       title: 'Jungle Runner',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.green,
+        colorScheme: ColorScheme.dark(
+          surface: GameConstants.surface,
+          onSurface: GameConstants.onSurface,
+          primary: GameConstants.accent,
+          secondary: GameConstants.accent,
+        ),
         visualDensity: VisualDensity.adaptivePlatformDensity,
-        fontFamily: 'Roboto', // You can add custom fonts later
+        fontFamily: 'Roboto',
         
         // App bar theme
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          iconTheme: IconThemeData(color: Colors.white),
+          iconTheme: IconThemeData(color: GameConstants.onSurface),
           titleTextStyle: TextStyle(
-            color: Colors.white,
+            color: GameConstants.onSurface,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -78,8 +93,10 @@ class JungleRunnerApp extends StatelessWidget {
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             elevation: 8,
+            backgroundColor: GameConstants.accent,
+            foregroundColor: GameConstants.onSurface,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(GameConstants.buttonRadius),
+              borderRadius: BorderRadius.circular(GameConstants.radiusMd),
             ),
           ),
         ),
@@ -87,41 +104,50 @@ class JungleRunnerApp extends StatelessWidget {
         // Dialog theme
         dialogTheme: DialogThemeData(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(GameConstants.radiusLg),
           ),
-          backgroundColor: Colors.white,
+          backgroundColor: GameConstants.surface,
           titleTextStyle: const TextStyle(
-            color: Colors.black87,
+            color: GameConstants.onSurface,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
           contentTextStyle: const TextStyle(
-            color: Colors.black87,
+            color: GameConstants.onSurfaceDim,
             fontSize: 16,
           ),
         ),
         
         // Snack bar theme
         snackBarTheme: SnackBarThemeData(
-          backgroundColor: GameConstants.primaryGreen,
+          backgroundColor: GameConstants.accent,
           contentTextStyle: const TextStyle(
             color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.w500,
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(GameConstants.radiusMd),
           ),
           behavior: SnackBarBehavior.floating,
         ),
       ),
       
-      // Routes
+      // Routes with custom transitions
       home: const SplashScreen(),
-      routes: {
-        '/main_menu': (context) => const MainMenuScreen(),
-        '/game': (context) => const GameScreen(),
-        '/shop': (context) => const ShopScreen(),
+      onGenerateRoute: (settings) {
+        switch (settings.name) {
+          case '/main_menu':
+            return FadeScaleTransition(page: MainMenuScreen());
+          case '/game':
+            return SlideLeftTransition(page: GameScreen());
+          case '/shop':
+            return SlideLeftTransition(page: ShopScreen());
+          case '/settings':
+            return SlideUpTransition(page: SettingsScreen());
+          default:
+            return MaterialPageRoute(builder: (_) => const MainMenuScreen());
+        }
       },
     );
   }
@@ -136,55 +162,102 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+    with TickerProviderStateMixin {
+  late AnimationController _titleController;
+  late AnimationController _progressController;
+  late AnimationController _glowController;
+  
+  late Animation<double> _titleFadeAnimation;
+  late Animation<double> _titleScaleAnimation;
+  late Animation<double> _progressAnimation;
+  late Animation<double> _glowAnimation;
   
   @override
   void initState() {
     super.initState();
     _setupAnimations();
-    _navigateToMainMenu();
+    _startAnimationSequence();
   }
   
   void _setupAnimations() {
-    _animationController = AnimationController(
+    // Title animations
+    _titleController = AnimationController(
+      duration: GameConstants.durationEntrance,
+      vsync: this,
+    );
+    
+    _titleFadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _titleController,
+      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+    ));
+    
+    _titleScaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _titleController,
+      curve: const Interval(0.0, 1.0, curve: Curves.elasticOut),
+    ));
+    
+    // Progress bar animation
+    _progressController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
     );
     
-    _fadeAnimation = Tween<double>(
+    _progressAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
+      parent: _progressController,
+      curve: Curves.easeInOut,
     ));
     
-    _scaleAnimation = Tween<double>(
-      begin: 0.5,
+    // Glow pulse animation
+    _glowController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    
+    _glowAnimation = Tween<double>(
+      begin: 0.3,
       end: 1.0,
     ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: const Interval(0.2, 1.0, curve: Curves.elasticOut),
+      parent: _glowController,
+      curve: Curves.easeInOut,
     ));
-    
-    _animationController.forward();
   }
   
-  Future<void> _navigateToMainMenu() async {
-    // Wait for animations to complete
-    await Future.delayed(const Duration(seconds: 3));
+  void _startAnimationSequence() async {
+    // Start title animation
+    await _titleController.forward();
     
+    // Start glow pulse
+    _glowController.repeat(reverse: true);
+    
+    // Start progress animation after a small delay
+    await Future.delayed(const Duration(milliseconds: 300));
+    await _progressController.forward();
+    
+    // Navigate to main menu
+    await Future.delayed(const Duration(milliseconds: 500));
     if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/main_menu');
+      _navigateToMainMenu();
     }
+  }
+  
+  void _navigateToMainMenu() {
+    Navigator.of(context).pushReplacementNamed('/main_menu');
   }
   
   @override
   void dispose() {
-    _animationController.dispose();
+    _titleController.dispose();
+    _progressController.dispose();
+    _glowController.dispose();
     super.dispose();
   }
   
@@ -193,99 +266,161 @@ class _SplashScreenState extends State<SplashScreen>
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF87CEEB), // Sky blue
-              Color(0xFF228B22), // Forest green
-              Color(0xFF006400), // Dark green
-            ],
-          ),
+          gradient: GameConstants.backgroundGradient,
         ),
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return Center(
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: ScaleTransition(
-                  scale: _scaleAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Game logo/icon (placeholder)
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: GameConstants.brown,
-                          borderRadius: BorderRadius.circular(30),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 15,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '🐒',
-                            style: TextStyle(fontSize: 60),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: AnimatedBuilder(
+                    animation: Listenable.merge([
+                      _titleController,
+                      _glowController,
+                    ]),
+                    builder: (context, child) {
+                      return FadeTransition(
+                        opacity: _titleFadeAnimation,
+                        child: ScaleTransition(
+                          scale: _titleScaleAnimation,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              // Animated app icon
+                              Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(GameConstants.radiusXl),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: GameConstants.coinGold.withValues(alpha: _glowAnimation.value * 0.5),
+                                      blurRadius: 20 + (_glowAnimation.value * 10),
+                                      spreadRadius: 2,
+                                    ),
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.3),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(GameConstants.radiusXl),
+                                  child: Image.asset(
+                                    'assets/images/ui/app_icon.png',
+                                    width: 120,
+                                    height: 120,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: GameConstants.spacingXl),
+                              
+                              // Game title with glow effect
+                              Stack(
+                                children: [
+                                  // Outer glow
+                                  Text(
+                                    'JUNGLE RUNNER',
+                                    style: GameConstants.displayLarge.copyWith(
+                                      foreground: Paint()
+                                        ..style = PaintingStyle.stroke
+                                        ..strokeWidth = 6
+                                        ..color = GameConstants.accent.withValues(
+                                          alpha: _glowAnimation.value * 0.8,
+                                        ),
+                                    ),
+                                  ),
+                                  // Main text
+                                  Text(
+                                    'JUNGLE RUNNER',
+                                    style: GameConstants.displayLarge.copyWith(
+                                      shadows: [
+                                        Shadow(
+                                          offset: const Offset(0, 2),
+                                          blurRadius: 8 + (_glowAnimation.value * 4),
+                                          color: GameConstants.accent.withValues(alpha: 0.6),
+                                        ),
+                                        const Shadow(
+                                          offset: Offset(0, 4),
+                                          blurRadius: 12,
+                                          color: Color(0x80000000),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              
+                              const SizedBox(height: GameConstants.spacingMd),
+                              
+                              // Subtitle
+                              Text(
+                                'Run, Jump, Survive!',
+                                style: GameConstants.bodyLarge.copyWith(
+                                  color: GameConstants.onSurfaceDim,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      
-                      const SizedBox(height: 30),
-                      
-                      // Game title
-                      const Text(
-                        'JUNGLE RUNNER',
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 2,
-                          shadows: [
-                            Shadow(
-                              offset: Offset(2, 2),
-                              blurRadius: 4,
-                              color: Colors.black54,
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // Subtitle
-                      const Text(
-                        'Run, Jump, Survive!',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 50),
-                      
-                      // Loading indicator
-                      const SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          strokeWidth: 3,
-                        ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
               ),
-            );
-          },
+              
+              // Progress bar section
+              Padding(
+                padding: const EdgeInsets.all(GameConstants.spacingXl),
+                child: Column(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _progressAnimation,
+                      builder: (context, child) {
+                        return Container(
+                          width: double.infinity,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: GameConstants.surface.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(GameConstants.radiusFull),
+                          ),
+                          child: FractionallySizedBox(
+                            widthFactor: _progressAnimation.value,
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: GameConstants.accentGradient,
+                                borderRadius: BorderRadius.circular(GameConstants.radiusFull),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: GameConstants.accent.withValues(alpha: 0.4),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    
+                    const SizedBox(height: GameConstants.spacingMd),
+                    
+                    Text(
+                      'Loading...',
+                      style: GameConstants.bodyMedium.copyWith(
+                        color: GameConstants.onSurfaceDim,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

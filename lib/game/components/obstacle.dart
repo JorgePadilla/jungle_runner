@@ -1,236 +1,289 @@
 import 'package:flame/components.dart';
+import 'package:flame/flame.dart';
+import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../config/game_config.dart';
-import '../../utils/constants.dart';
 
-enum ObstacleType { log, vine, gap }
+enum ObstacleType { log, vine, gap, rockHead, fire, saw }
 
-/// Base obstacle class
-abstract class Obstacle extends RectangleComponent {
-  final ObstacleType type;
-  double _gameSpeed = GameConfig.playerSpeed;
+abstract class Obstacle extends PositionComponent {
+  double _gameSpeed = 1.0;
   
-  Obstacle({required this.type, required Vector2 position, required Vector2 size}) {
-    this.position = position;
-    this.size = size;
-    anchor = Anchor.bottomLeft;
-  }
+  // Hitbox shrink — makes near-misses feel fair
+  static const double _hitboxShrink = 0.18; // 18% inset on each side
+  
+  ObstacleType get type;
+  bool get requiresJump;
+  bool get requiresSlide;
+
+  /// Whether this obstacle participates in lethal collision.
+  /// Override to false for cosmetic-only obstacles (e.g. gap).
+  bool get isLethal => true;
   
   @override
   void update(double dt) {
     super.update(dt);
-    
-    // Move obstacle left
-    position.x -= _gameSpeed * dt;
+    position.x -= _gameSpeed * GameConfig.baseScrollSpeed * dt;
   }
   
-  /// Update game speed
-  void updateSpeed(double newSpeed) {
-    _gameSpeed = newSpeed;
+  void updateSpeed(double speed) {
+    _gameSpeed = speed;
   }
   
-  /// Check if obstacle is off screen
-  bool get isOffScreen => position.x + size.x < -50;
+  bool get isOffScreen => position.x + size.x < 0;
   
-  /// Get collision bounds for this obstacle
-  Rect get bounds => Rect.fromLTWH(position.x, position.y, size.x, size.y);
-  
-  /// Check if obstacle requires jumping
-  bool get requiresJump => type == ObstacleType.log || type == ObstacleType.gap;
-  
-  /// Check if obstacle requires sliding
-  bool get requiresSlide => type == ObstacleType.vine;
+  /// Collision bounds — shrunk for forgiving gameplay.
+  Rect get bounds {
+    final shrinkX = size.x * _hitboxShrink;
+    final shrinkY = size.y * _hitboxShrink;
+    return Rect.fromLTWH(
+      position.x + shrinkX,
+      position.y + shrinkY,
+      size.x - shrinkX * 2,
+      size.y - shrinkY * 2,
+    );
+  }
 }
 
-/// Log obstacle that player must jump over
 class LogObstacle extends Obstacle {
-  LogObstacle({required Vector2 position}) 
-      : super(
-          type: ObstacleType.log, 
-          position: position,
-          size: Vector2(GameConfig.obstacleWidth, GameConfig.logHeight),
-        );
+  late SpriteComponent _sprite;
+  @override
+  ObstacleType get type => ObstacleType.log;
   
   @override
-  void render(Canvas canvas) {
-    // Draw log
-    final logPaint = Paint()..color = GameConstants.brown;
-    final logRect = Rect.fromLTWH(0, 0, size.x, size.y);
-    
-    // Main log body
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(logRect, const Radius.circular(8)),
-      logPaint,
+  bool get requiresJump => true;
+  
+  @override
+  bool get requiresSlide => false;
+  
+  LogObstacle() {
+    size = Vector2(GameConfig.obstacleWidth.toDouble(), GameConfig.logHeight.toDouble());
+    anchor = Anchor.topLeft;
+  }
+  
+  @override
+  Future<void> onLoad() async {
+    final logSprite = await Sprite.load('obstacles/log.png');
+    _sprite = SpriteComponent(
+      sprite: logSprite,
+      size: size,
     );
-    
-    // Log texture lines
-    final texturePaint = Paint()
-      ..color = GameConstants.brown.withOpacity(0.6)
-      ..strokeWidth = 2;
-    
-    // Horizontal lines for wood grain
-    for (double y = 5; y < size.y; y += 8) {
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.x, y),
-        texturePaint,
-      );
-    }
-    
-    // End caps (darker)
-    final endCapPaint = Paint()..color = GameConstants.brown.withOpacity(0.7);
-    canvas.drawCircle(Offset(0, size.y / 2), size.y / 2, endCapPaint);
-    canvas.drawCircle(Offset(size.x, size.y / 2), size.y / 2, endCapPaint);
-    
-    // Tree rings on end caps
-    final ringPaint = Paint()
-      ..color = GameConstants.brown.withOpacity(0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    
-    for (double r = 5; r < size.y / 2; r += 4) {
-      canvas.drawCircle(Offset(0, size.y / 2), r, ringPaint);
-      canvas.drawCircle(Offset(size.x, size.y / 2), r, ringPaint);
-    }
-    
-    // TODO: Replace with actual log sprite
+    add(_sprite);
   }
 }
 
-/// Vine obstacle that player must slide under
 class VineObstacle extends Obstacle {
-  VineObstacle({required Vector2 position}) 
-      : super(
-          type: ObstacleType.vine, 
-          position: position,
-          size: Vector2(GameConfig.obstacleWidth, GameConfig.vineHeight),
-        );
+  late SpriteComponent _sprite;
+  @override
+  ObstacleType get type => ObstacleType.vine;
   
   @override
-  void render(Canvas canvas) {
-    // Draw hanging vine
-    final vinePaint = Paint()..color = GameConstants.darkGreen;
-    final leafPaint = Paint()..color = GameConstants.primaryGreen;
-    
-    // Main vine stem
-    final vineWidth = 8.0;
-    final vineRect = Rect.fromLTWH(
-      (size.x - vineWidth) / 2, 
-      -200, // Extend upward off-screen
-      vineWidth, 
-      200 + size.y,
+  bool get requiresJump => false;
+  
+  @override
+  bool get requiresSlide => true;
+  
+  VineObstacle() {
+    size = Vector2(GameConfig.obstacleWidth.toDouble(), GameConfig.vineHeight.toDouble());
+    anchor = Anchor.topLeft;
+  }
+  
+  @override
+  Future<void> onLoad() async {
+    final vineSprite = await Sprite.load('obstacles/vine.png');
+    _sprite = SpriteComponent(
+      sprite: vineSprite,
+      size: size,
     );
-    canvas.drawRect(vineRect, vinePaint);
-    
-    // Vine leaves along the stem
-    for (double y = -180; y < size.y; y += 25) {
-      // Left leaf
-      canvas.drawOval(
-        Rect.fromLTWH(vineRect.left - 15, y, 15, 20),
-        leafPaint,
-      );
-      
-      // Right leaf
-      canvas.drawOval(
-        Rect.fromLTWH(vineRect.right, y + 12, 15, 20),
-        leafPaint,
-      );
-    }
-    
-    // Hanging vine bottom (thicker part)
-    final bottomPaint = Paint()..color = GameConstants.brown;
-    canvas.drawOval(
-      Rect.fromLTWH(
-        (size.x - 20) / 2,
-        size.y - 30,
-        20,
-        30,
-      ),
-      bottomPaint,
-    );
-    
-    // TODO: Replace with actual vine sprite
+    add(_sprite);
   }
 }
 
-/// Gap obstacle that player must jump over
 class GapObstacle extends Obstacle {
-  GapObstacle({required Vector2 position}) 
-      : super(
-          type: ObstacleType.gap, 
-          position: position,
-          size: Vector2(GameConfig.gapWidth, GameConfig.groundHeight),
-        );
+  late SpriteComponent _sprite;
+  @override
+  ObstacleType get type => ObstacleType.gap;
   
   @override
-  void render(Canvas canvas) {
-    // Draw gap (darker area to show depth)
-    final gapPaint = Paint()..color = const Color(0xFF2F2F2F);
-    
-    // Main gap
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.x, size.y),
-      gapPaint,
+  bool get requiresJump => true;
+  
+  @override
+  bool get requiresSlide => false;
+  
+  /// Gap is cosmetic-only — no falling mechanic implemented yet.
+  @override
+  bool get isLethal => false;
+  
+  GapObstacle() {
+    size = Vector2(GameConfig.gapWidth.toDouble(), GameConfig.groundHeight.toDouble());
+    anchor = Anchor.topLeft;
+  }
+  
+  @override
+  Future<void> onLoad() async {
+    final gapSprite = await Sprite.load('obstacles/gap.png');
+    _sprite = SpriteComponent(
+      sprite: gapSprite,
+      size: size,
     );
-    
-    // Add some depth shading
-    final shadowPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          const Color(0xFF2F2F2F),
-          const Color(0xFF1F1F1F),
-          const Color(0xFF0F0F0F),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, size.x, size.y));
-    
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.x, size.y),
-      shadowPaint,
-    );
-    
-    // Add some rocky edges
-    final rockPaint = Paint()..color = GameConstants.brown;
-    
-    // Left edge rocks
-    for (int i = 0; i < 3; i++) {
-      canvas.drawCircle(
-        Offset(-5, i * 20.0 + 10),
-        5 + (i * 2),
-        rockPaint,
-      );
-    }
-    
-    // Right edge rocks
-    for (int i = 0; i < 3; i++) {
-      canvas.drawCircle(
-        Offset(size.x + 5, i * 25.0 + 15),
-        4 + (i * 2),
-        rockPaint,
-      );
-    }
-    
-    // TODO: Replace with actual gap/pit sprite
+    add(_sprite);
   }
 }
 
-/// Factory class to create obstacles
-class ObstacleFactory {
-  static Obstacle createObstacle(ObstacleType type, Vector2 position) {
-    switch (type) {
-      case ObstacleType.log:
-        return LogObstacle(position: position);
-      case ObstacleType.vine:
-        return VineObstacle(position: position);
-      case ObstacleType.gap:
-        return GapObstacle(position: position);
-    }
+/// Rock Head — ground obstacle (jump over), static angry stone face
+class RockHeadObstacle extends Obstacle {
+  late SpriteComponent _sprite;
+  @override
+  ObstacleType get type => ObstacleType.rockHead;
+  @override
+  bool get requiresJump => true;
+  @override
+  bool get requiresSlide => false;
+
+  RockHeadObstacle() {
+    size = Vector2(42, 42);
+    anchor = Anchor.topLeft;
   }
+
+  @override
+  Future<void> onLoad() async {
+    final s = await Sprite.load('obstacles/rock.png');
+    _sprite = SpriteComponent(sprite: s, size: size);
+    add(_sprite);
+  }
+}
+
+/// Fire — ground obstacle (jump over), animated flickering flames
+class FireObstacle extends Obstacle {
+  late SpriteAnimationComponent _anim;
+  @override
+  ObstacleType get type => ObstacleType.fire;
+  @override
+  bool get requiresJump => true;
+  @override
+  bool get requiresSlide => false;
+
+  FireObstacle() {
+    // Fire sprite sheet: 48x32 = 3 frames of 16x32 each
+    size = Vector2(16, 32);
+    anchor = Anchor.topLeft;
+  }
+
+  @override
+  Future<void> onLoad() async {
+    final image = await Flame.images.load('obstacles/fire.png');
+    final anim = SpriteAnimation.fromFrameData(
+      image,
+      SpriteAnimationData.sequenced(
+        amount: 3,
+        stepTime: 0.12,
+        textureSize: Vector2(16, 32),
+      ),
+    );
+    _anim = SpriteAnimationComponent(animation: anim, size: size);
+    add(_anim);
+  }
+}
+
+/// Saw — aerial obstacle (slide under), animated spinning blade
+class SawObstacle extends Obstacle {
+  late SpriteAnimationComponent _anim;
+  @override
+  ObstacleType get type => ObstacleType.saw;
+  @override
+  bool get requiresJump => false;
+  @override
+  bool get requiresSlide => true;
+
+  SawObstacle() {
+    // Saw sprite sheet: 304x38 = 8 frames of 38x38 each
+    size = Vector2(38, 38);
+    anchor = Anchor.topLeft;
+  }
+
+  @override
+  Future<void> onLoad() async {
+    final image = await Flame.images.load('obstacles/saw.png');
+    final anim = SpriteAnimation.fromFrameData(
+      image,
+      SpriteAnimationData.sequenced(
+        amount: 8,
+        stepTime: 0.06,
+        textureSize: Vector2(38, 38),
+      ),
+    );
+    _anim = SpriteAnimationComponent(animation: anim, size: size);
+    add(_anim);
+  }
+}
+
+class ObstacleFactory {
+  static final math.Random _random = math.Random();
+
+  /// Weighted obstacle pool — jump and slide types mixed for variety.
+  /// Gap removed (cosmetic only, no mechanic).
+  static const List<ObstacleType> _weightedPool = [
+    // Jump obstacles (60%)
+    ObstacleType.log,
+    ObstacleType.log,
+    ObstacleType.rockHead,
+    ObstacleType.fire,
+    ObstacleType.fire,
+    ObstacleType.rockHead,
+    // Slide obstacles (40%)
+    ObstacleType.vine,
+    ObstacleType.vine,
+    ObstacleType.saw,
+    ObstacleType.saw,
+  ];
   
   static ObstacleType getRandomObstacleType() {
-    final types = ObstacleType.values;
-    final random = DateTime.now().millisecondsSinceEpoch % types.length;
-    return types[random];
+    return _weightedPool[_random.nextInt(_weightedPool.length)];
+  }
+  
+  static Obstacle createObstacle(ObstacleType type, Vector2 position) {
+    Obstacle obstacle;
+    switch (type) {
+      case ObstacleType.log:
+        obstacle = LogObstacle();
+        obstacle.position = Vector2(position.x, position.y - obstacle.size.y);
+        break;
+
+      case ObstacleType.rockHead:
+        obstacle = RockHeadObstacle();
+        obstacle.position = Vector2(position.x, position.y - obstacle.size.y);
+        break;
+
+      case ObstacleType.fire:
+        obstacle = FireObstacle();
+        obstacle.position = Vector2(position.x, position.y - obstacle.size.y);
+        break;
+        
+      case ObstacleType.vine:
+        obstacle = VineObstacle();
+        // Hangs at head height — standing player collides, sliding player clears.
+        final vineBottomY = position.y - GameConfig.slideHeight - 5;
+        obstacle.position = Vector2(position.x, vineBottomY - obstacle.size.y);
+        break;
+
+      case ObstacleType.saw:
+        obstacle = SawObstacle();
+        // Same height logic as vine — slide under it
+        final sawBottomY = position.y - GameConfig.slideHeight - 5;
+        obstacle.position = Vector2(position.x, sawBottomY - obstacle.size.y);
+        break;
+        
+      case ObstacleType.gap:
+        obstacle = GapObstacle();
+        obstacle.position = Vector2(position.x, position.y);
+        break;
+    }
+    return obstacle;
+  }
+  
+  // Legacy method for backwards compatibility
+  static Obstacle create(ObstacleType type, double groundY) {
+    return createObstacle(type, Vector2(GameConfig.worldWidth.toDouble(), groundY));
   }
 }

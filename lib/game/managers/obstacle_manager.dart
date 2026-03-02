@@ -18,9 +18,18 @@ class ObstacleManager extends Component {
   final double _groundY = GameConfig.worldHeight - GameConfig.groundHeight;
   final Random _random = Random();
   
+  /// Grace period at game start — no obstacles for the first 2.5 seconds
+  double _gracePeriod = 2.5;
+  
   @override
   void update(double dt) {
     super.update(dt);
+    
+    // Countdown grace period before any obstacles spawn
+    if (_gracePeriod > 0) {
+      _gracePeriod -= dt;
+      return; // Skip all spawning during grace period
+    }
     
     // Update spawn timer
     _spawnTimer += dt;
@@ -99,21 +108,24 @@ class ObstacleManager extends Component {
     
     switch (obstacle.type) {
       case ObstacleType.log:
-        // Coins above the log
+      case ObstacleType.rockHead:
+      case ObstacleType.fire:
+        // Coins above ground obstacles (jump to collect)
         startPosition = Vector2(baseX, baseY - 50);
-        direction = Vector2(GameConfig.coinSpacing, -10); // Slight arc
+        direction = Vector2(GameConfig.coinSpacing, -10);
         break;
         
       case ObstacleType.vine:
-        // Coins to the side of the vine
-        startPosition = Vector2(baseX - 40, baseY);
-        direction = Vector2(GameConfig.coinSpacing, 0); // Horizontal line
+      case ObstacleType.saw:
+        // Coins low (slide to collect while dodging overhead)
+        startPosition = Vector2(baseX - 40, baseY + 20);
+        direction = Vector2(GameConfig.coinSpacing, 0);
         break;
         
       case ObstacleType.gap:
         // Coins over the gap
         startPosition = Vector2(baseX + 20, baseY - 30);
-        direction = Vector2(GameConfig.coinSpacing, 0); // Horizontal line
+        direction = Vector2(GameConfig.coinSpacing, 0);
         break;
     }
     
@@ -192,7 +204,7 @@ class ObstacleManager extends Component {
     if (hasShield) return false; // Shield protects from obstacles
     
     for (final obstacle in _obstacles) {
-      if (playerBounds.overlaps(obstacle.bounds)) {
+      if (obstacle.isLethal && playerBounds.overlaps(obstacle.bounds)) {
         return true;
       }
     }
@@ -259,7 +271,8 @@ class ObstacleManager extends Component {
     }
     _powerUps.clear();
     
-    // Reset spawn timer
+    // Reset spawn timer and grace period
     _spawnTimer = 0;
+    _gracePeriod = 2.5;
   }
 }

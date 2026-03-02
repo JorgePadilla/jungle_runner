@@ -6,7 +6,7 @@ import '../config/game_config.dart';
 class DifficultyManager extends Component {
   double _currentSpeed = GameConfig.playerSpeed;
   double _currentObstacleInterval = GameConfig.obstacleSpawnInterval;
-  double _distanceTraveled = 0;
+  double _distanceTraveledPx = 0; // Internal distance in PIXELS
   int _currentSpeedLevel = 0;
   int _currentObstacleLevel = 0;
   
@@ -19,23 +19,26 @@ class DifficultyManager extends Component {
     this.onObstacleIntervalChanged,
   });
   
+  /// Convert raw pixel distance to meters
+  double get _distanceInMeters => _distanceTraveledPx / GameConfig.pixelsPerMeter;
+  
   @override
   void update(double dt) {
     super.update(dt);
     
-    // Update distance traveled based on current speed
-    _distanceTraveled += _currentSpeed * dt;
+    // Update distance traveled in pixels based on current speed (px/s)
+    _distanceTraveledPx += _currentSpeed * dt;
     
-    // Check for speed increases
+    // Check for speed increases (based on meters)
     _updateSpeed();
     
-    // Check for obstacle frequency increases
+    // Check for obstacle frequency increases (based on meters)
     _updateObstacleFrequency();
   }
   
   void _updateSpeed() {
     // Increase speed every 100 meters
-    final speedLevel = (_distanceTraveled / 100).floor();
+    final speedLevel = (_distanceInMeters / 100).floor();
     
     if (speedLevel > _currentSpeedLevel) {
       _currentSpeedLevel = speedLevel;
@@ -52,7 +55,7 @@ class DifficultyManager extends Component {
   
   void _updateObstacleFrequency() {
     // Increase obstacle frequency every 200 meters
-    final obstacleLevel = (_distanceTraveled / 200).floor();
+    final obstacleLevel = (_distanceInMeters / 200).floor();
     
     if (obstacleLevel > _currentObstacleLevel) {
       _currentObstacleLevel = obstacleLevel;
@@ -67,17 +70,17 @@ class DifficultyManager extends Component {
     }
   }
   
-  /// Get current game speed
+  /// Get current game speed (px/s)
   double get currentSpeed => _currentSpeed;
   
   /// Get current obstacle spawn interval
   double get currentObstacleInterval => _currentObstacleInterval;
   
-  /// Get distance traveled in meters
-  double get distanceTraveled => _distanceTraveled;
+  /// Get distance traveled in meters (converted from pixels)
+  double get distanceTraveled => _distanceInMeters;
   
-  /// Get score based on distance
-  int get score => (_distanceTraveled * GameConfig.scoreMultiplier).round();
+  /// Get score based on distance in meters
+  int get score => (_distanceInMeters * GameConfig.scoreMultiplier).round();
   
   /// Get current speed level (for display)
   int get speedLevel => _currentSpeedLevel;
@@ -89,7 +92,7 @@ class DifficultyManager extends Component {
   void reset() {
     _currentSpeed = GameConfig.playerSpeed;
     _currentObstacleInterval = GameConfig.obstacleSpawnInterval;
-    _distanceTraveled = 0;
+    _distanceTraveledPx = 0;
     _currentSpeedLevel = 0;
     _currentObstacleLevel = 0;
     
@@ -98,28 +101,29 @@ class DifficultyManager extends Component {
     onObstacleIntervalChanged?.call(_currentObstacleInterval);
   }
   
-  /// Set distance (useful for continue after ad)
-  void setDistance(double distance) {
-    _distanceTraveled = distance;
+  /// Set distance in meters (useful for continue after ad)
+  void setDistance(double distanceInMeters) {
+    _distanceTraveledPx = distanceInMeters * GameConfig.pixelsPerMeter;
     
-    // Recalculate levels based on new distance
-    _currentSpeedLevel = (distance / 100).floor();
-    _currentObstacleLevel = (distance / 200).floor();
+    // Recalculate levels based on new distance (in meters)
+    _currentSpeedLevel = (distanceInMeters / 100).floor();
+    _currentObstacleLevel = (distanceInMeters / 200).floor();
     
     // Update speed and interval
     _updateSpeed();
     _updateObstacleFrequency();
   }
   
-  /// Get difficulty description for UI
+  /// Get difficulty description for UI (based on meters)
   String getDifficultyDescription() {
-    if (_distanceTraveled < 100) {
+    final meters = _distanceInMeters;
+    if (meters < 100) {
       return 'Easy';
-    } else if (_distanceTraveled < 300) {
+    } else if (meters < 300) {
       return 'Medium';
-    } else if (_distanceTraveled < 600) {
+    } else if (meters < 600) {
       return 'Hard';
-    } else if (_distanceTraveled < 1000) {
+    } else if (meters < 1000) {
       return 'Very Hard';
     } else {
       return 'Extreme';
@@ -133,21 +137,23 @@ class DifficultyManager extends Component {
   double get obstacleFrequencyMultiplier => 
       GameConfig.obstacleSpawnInterval / _currentObstacleInterval;
   
-  /// Check if player has reached milestone
+  /// Check if player has reached milestone (in meters)
   bool checkMilestone(int meters) {
-    final currentMilestone = (_distanceTraveled / meters).floor();
-    final previousMilestone = ((_distanceTraveled - _currentSpeed / 60) / meters).floor();
+    final currentMilestone = (_distanceInMeters / meters).floor();
+    // Estimate previous frame's distance in meters
+    final prevMeters = _distanceInMeters - (_currentSpeed / GameConfig.pixelsPerMeter) / 60;
+    final previousMilestone = (prevMeters / meters).floor();
     return currentMilestone > previousMilestone;
   }
   
-  /// Get next milestone distance
+  /// Get next milestone distance in meters
   int getNextMilestone(int interval) {
-    final currentMilestone = (_distanceTraveled / interval).floor();
+    final currentMilestone = (_distanceInMeters / interval).floor();
     return (currentMilestone + 1) * interval;
   }
   
-  /// Calculate predicted score for continue feature
+  /// Calculate predicted score for continue feature (additionalDistance in meters)
   int getPredictedScore(double additionalDistance) {
-    return ((distanceTraveled + additionalDistance) * GameConfig.scoreMultiplier).round();
+    return ((_distanceInMeters + additionalDistance) * GameConfig.scoreMultiplier).round();
   }
 }

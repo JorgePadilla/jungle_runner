@@ -1,290 +1,136 @@
+import 'dart:ui';
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart';
+import 'package:flame/sprite.dart';
 import '../config/game_config.dart';
-import '../../utils/constants.dart';
 
-/// 5-layer parallax scrolling background
 class ParallaxBackground extends Component {
-  late List<BackgroundLayer> _layers;
-  double _gameSpeed = GameConfig.playerSpeed;
-  
-  ParallaxBackground() {
-    _initializeLayers();
-  }
-  
-  void _initializeLayers() {
-    _layers = [
-      // Layer 0: Sky (slowest)
-      SkyLayer(speed: GameConfig.parallaxSpeeds[0]),
-      // Layer 1: Far mountains
-      MountainLayer(speed: GameConfig.parallaxSpeeds[1]),
-      // Layer 2: Mid trees
-      MidTreesLayer(speed: GameConfig.parallaxSpeeds[2]),
-      // Layer 3: Near trees
-      NearTreesLayer(speed: GameConfig.parallaxSpeeds[3]),
-      // Layer 4: Close vegetation (fastest)
-      CloseVegetationLayer(speed: GameConfig.parallaxSpeeds[4]),
+  final List<BackgroundLayer> _layers = [];
+  double _gameSpeed = 1.0;
+
+  @override
+  Future<void> onLoad() async {
+    // Create 5 background layers with their respective speeds
+    // Layer 0 (sky) stretches to fill; layers 1-4 render at proportional
+    // height anchored to the bottom so jungle canopy sits at ground level.
+    final layerConfigs = [
+      {'image': 'background/sky.png', 'speed': GameConfig.parallaxSpeeds[0], 'isSky': true},
+      {'image': 'background/mountains.png', 'speed': GameConfig.parallaxSpeeds[1], 'isSky': false},
+      {'image': 'background/mid_trees.png', 'speed': GameConfig.parallaxSpeeds[2], 'isSky': false},
+      {'image': 'background/near_trees.png', 'speed': GameConfig.parallaxSpeeds[3], 'isSky': false},
+      {'image': 'background/vegetation.png', 'speed': GameConfig.parallaxSpeeds[4], 'isSky': false},
     ];
-    
-    for (final layer in _layers) {
-      add(layer);
+
+    for (final config in layerConfigs) {
+      final layer = BackgroundLayer(
+        imagePath: config['image'] as String,
+        scrollSpeed: config['speed'] as double,
+        isSky: config['isSky'] as bool,
+      );
+      await add(layer);
+      _layers.add(layer);
     }
   }
+
+  void updateSpeed(double speed) {
+    _gameSpeed = speed;
+    for (final layer in _layers) {
+      layer.updateSpeed(speed);
+    }
+  }
+}
+
+class BackgroundLayer extends Component {
+  final String imagePath;
+  final double scrollSpeed;
+  final bool isSky;
   
+  late SpriteComponent _sprite1;
+  late SpriteComponent _sprite2;
+  double _currentSpeed = 1.0;
+
+  /// Single scroll offset — both tile positions are derived from this
+  /// so they can never drift apart.
+  double _scrollOffset = 0;
+
+  // Original aspect-ratio height for the jungle layers (384x216 source)
+  static const double _sourceW = 384;
+  static const double _sourceH = 216;
+
+  // Extra width on each side to bleed past the viewport edge
+  static const double _bleed = 8.0;
+
+  BackgroundLayer({
+    required this.imagePath,
+    required this.scrollSpeed,
+    this.isSky = false,
+  });
+
+  @override
+  Future<void> onLoad() async {
+    final loadedSprite = await Sprite.load(imagePath);
+
+    // Paint with nearest-neighbor filtering to prevent edge blending artifacts
+    final crisp = Paint()..filterQuality = FilterQuality.none;
+
+    // Each tile = worldWidth + 2*bleed so it extends past both viewport edges
+    final tileW = GameConfig.worldWidth + _bleed * 2;
+
+    if (isSky) {
+      _sprite1 = SpriteComponent(
+        sprite: loadedSprite,
+        size: Vector2(tileW, GameConfig.worldHeight.toDouble()),
+        position: Vector2(-_bleed, 0),
+        paint: crisp,
+      );
+      _sprite2 = SpriteComponent(
+        sprite: loadedSprite,
+        size: Vector2(tileW, GameConfig.worldHeight.toDouble()),
+        position: Vector2(GameConfig.worldWidth - _bleed, 0),
+        paint: crisp,
+      );
+    } else {
+      final layerH = GameConfig.worldWidth * (_sourceH / _sourceW);
+      final yPos = GameConfig.worldHeight - layerH;
+
+      _sprite1 = SpriteComponent(
+        sprite: loadedSprite,
+        size: Vector2(tileW, layerH),
+        position: Vector2(-_bleed, yPos),
+        paint: crisp,
+      );
+      _sprite2 = SpriteComponent(
+        sprite: loadedSprite,
+        size: Vector2(tileW, layerH),
+        position: Vector2(GameConfig.worldWidth - _bleed, yPos),
+        paint: crisp,
+      );
+    }
+
+    add(_sprite1);
+    add(_sprite2);
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
     
-    // Update all layers with current game speed
-    for (final layer in _layers) {
-      layer.updateSpeed(_gameSpeed);
-    }
-  }
-  
-  /// Update game speed for all layers
-  void updateSpeed(double newSpeed) {
-    _gameSpeed = newSpeed;
-  }
-}
+    final moveSpeed = scrollSpeed * _currentSpeed * GameConfig.baseScrollSpeed;
 
-/// Base class for background layers
-abstract class BackgroundLayer extends Component {
-  final double baseSpeed;
-  double _currentGameSpeed = GameConfig.playerSpeed;
-  
-  BackgroundLayer({required this.baseSpeed});
-  
-  void updateSpeed(double gameSpeed) {
-    _currentGameSpeed = gameSpeed;
-  }
-  
-  double get effectiveSpeed => _currentGameSpeed * baseSpeed;
-}
+    // Advance single offset and wrap to prevent overflow
+    _scrollOffset += moveSpeed * dt;
+    _scrollOffset %= GameConfig.worldWidth;
 
-/// Sky layer with gradient and clouds
-class SkyLayer extends BackgroundLayer {
-  late List<CloudComponent> _clouds;
-  
-  SkyLayer({required double speed}) : super(baseSpeed: speed) {
-    _initializeClouds();
-  }
-  
-  void _initializeClouds() {
-    _clouds = [];
-    
-    // Create several clouds for variety
-    for (int i = 0; i < 5; i++) {
-      final cloud = CloudComponent(
-        position: Vector2(
-          i * GameConfig.worldWidth * 0.4,
-          50 + (i * 30) % 80,
-        ),
-        size: Vector2(100 + (i * 20) % 60, 40 + (i * 10) % 30),
-      );
-      _clouds.add(cloud);
-      add(cloud);
-    }
-  }
-  
-  @override
-  void render(Canvas canvas) {
-    // Draw sky gradient
-    final skyGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        const Color(0xFF87CEEB), // Sky blue at top
-        const Color(0xFFB0E0E6), // Powder blue in middle
-        const Color(0xFFF0F8FF), // Alice blue at bottom
-      ],
-    );
-    
-    final skyPaint = Paint()
-      ..shader = skyGradient.createShader(
-        Rect.fromLTWH(0, 0, GameConfig.worldWidth, GameConfig.worldHeight * 0.6),
-      );
-    
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, GameConfig.worldWidth * 2, GameConfig.worldHeight * 0.6),
-      skyPaint,
-    );
-    
-    // TODO: Replace with actual sky sprite/texture
-  }
-  
-  @override
-  void update(double dt) {
-    super.update(dt);
-    
-    // Move clouds
-    for (final cloud in _clouds) {
-      cloud.position.x -= effectiveSpeed * dt * 0.3; // Clouds move slower
-      
-      // Reset cloud position when off screen
-      if (cloud.position.x + cloud.size.x < 0) {
-        cloud.position.x = GameConfig.worldWidth + 100;
-      }
-    }
-  }
-}
+    // Derive both positions from one value — zero drift
+    // Offset by -bleed so tiles always extend past viewport edges
+    final x1 = -_scrollOffset - _bleed;
+    final x2 = GameConfig.worldWidth - _scrollOffset - _bleed;
 
-/// Cloud component
-class CloudComponent extends RectangleComponent {
-  CloudComponent({required Vector2 position, required Vector2 size}) {
-    this.position = position;
-    this.size = size;
-    anchor = Anchor.topLeft;
+    // Floor to whole pixels to eliminate sub-pixel seams
+    _sprite1.position.x = x1.floorToDouble();
+    _sprite2.position.x = x2.floorToDouble();
   }
-  
-  @override
-  void render(Canvas canvas) {
-    final cloudPaint = Paint()..color = Colors.white.withOpacity(0.8);
-    
-    // Draw puffy cloud shape
-    final cloudPath = Path();
-    final centerX = size.x / 2;
-    final centerY = size.y / 2;
-    
-    // Main cloud body
-    canvas.drawCircle(Offset(centerX, centerY), size.y * 0.3, cloudPaint);
-    // Left puff
-    canvas.drawCircle(Offset(centerX - size.x * 0.25, centerY), size.y * 0.25, cloudPaint);
-    // Right puff
-    canvas.drawCircle(Offset(centerX + size.x * 0.25, centerY), size.y * 0.25, cloudPaint);
-    // Top puff
-    canvas.drawCircle(Offset(centerX, centerY - size.y * 0.15), size.y * 0.2, cloudPaint);
-  }
-}
 
-/// Mountain layer in the far background
-class MountainLayer extends BackgroundLayer {
-  MountainLayer({required double speed}) : super(baseSpeed: speed);
-  
-  @override
-  void render(Canvas canvas) {
-    final mountainPaint = Paint()..color = const Color(0xFF708090).withOpacity(0.7);
-    
-    // Draw mountain silhouettes
-    final mountainPath = Path();
-    mountainPath.moveTo(0, GameConfig.worldHeight * 0.6);
-    
-    // Create mountain peaks
-    for (double x = 0; x <= GameConfig.worldWidth * 2; x += 150) {
-      final peakHeight = GameConfig.worldHeight * (0.3 + (x % 200) / 1000);
-      mountainPath.lineTo(x, peakHeight);
-      mountainPath.lineTo(x + 75, GameConfig.worldHeight * (0.4 + (x % 150) / 1500));
-    }
-    
-    mountainPath.lineTo(GameConfig.worldWidth * 2, GameConfig.worldHeight * 0.6);
-    mountainPath.close();
-    
-    canvas.drawPath(mountainPath, mountainPaint);
-    
-    // TODO: Replace with actual mountain sprite
-  }
-}
-
-/// Mid-distance trees layer
-class MidTreesLayer extends BackgroundLayer {
-  MidTreesLayer({required double speed}) : super(baseSpeed: speed);
-  
-  @override
-  void render(Canvas canvas) {
-    final treePaint = Paint()..color = GameConstants.primaryGreen.withOpacity(0.6);
-    final trunkPaint = Paint()..color = GameConstants.brown.withOpacity(0.6);
-    
-    // Draw forest silhouette
-    for (double x = 0; x <= GameConfig.worldWidth * 2; x += 40) {
-      final treeHeight = 60 + (x % 80);
-      final treeTop = GameConfig.worldHeight * 0.65 - treeHeight;
-      
-      // Tree trunk
-      canvas.drawRect(
-        Rect.fromLTWH(x + 15, GameConfig.worldHeight * 0.65 - 20, 10, 20),
-        trunkPaint,
-      );
-      
-      // Tree crown (triangle)
-      final treePath = Path();
-      treePath.moveTo(x + 20, treeTop);
-      treePath.lineTo(x, GameConfig.worldHeight * 0.65 - 20);
-      treePath.lineTo(x + 40, GameConfig.worldHeight * 0.65 - 20);
-      treePath.close();
-      
-      canvas.drawPath(treePath, treePaint);
-    }
-    
-    // TODO: Replace with actual tree sprites
-  }
-}
-
-/// Near trees layer
-class NearTreesLayer extends BackgroundLayer {
-  NearTreesLayer({required double speed}) : super(baseSpeed: speed);
-  
-  @override
-  void render(Canvas canvas) {
-    final treePaint = Paint()..color = GameConstants.primaryGreen.withOpacity(0.8);
-    final trunkPaint = Paint()..color = GameConstants.brown.withOpacity(0.8);
-    
-    // Draw closer, larger trees
-    for (double x = 0; x <= GameConfig.worldWidth * 2; x += 80) {
-      final treeHeight = 100 + (x % 100);
-      final treeTop = GameConfig.worldHeight * 0.7 - treeHeight;
-      
-      // Tree trunk
-      canvas.drawRect(
-        Rect.fromLTWH(x + 25, GameConfig.worldHeight * 0.7 - 30, 15, 30),
-        trunkPaint,
-      );
-      
-      // Tree crown (oval)
-      canvas.drawOval(
-        Rect.fromLTWH(x, treeTop, 65, treeHeight - 30),
-        treePaint,
-      );
-    }
-    
-    // TODO: Replace with actual tree sprites
-  }
-}
-
-/// Close vegetation layer (bushes, grass)
-class CloseVegetationLayer extends BackgroundLayer {
-  CloseVegetationLayer({required double speed}) : super(baseSpeed: speed);
-  
-  @override
-  void render(Canvas canvas) {
-    final bushPaint = Paint()..color = GameConstants.darkGreen;
-    final grassPaint = Paint()..color = GameConstants.lightGreen;
-    
-    // Draw bushes and tall grass
-    for (double x = 0; x <= GameConfig.worldWidth * 2; x += 30) {
-      final bushHeight = 30 + (x % 40);
-      final bushY = GameConfig.worldHeight - GameConfig.groundHeight - bushHeight;
-      
-      // Bush
-      canvas.drawOval(
-        Rect.fromLTWH(x, bushY, 25, bushHeight),
-        bushPaint,
-      );
-      
-      // Tall grass
-      for (int i = 0; i < 3; i++) {
-        final grassX = x + 30 + i * 5;
-        final grassHeight = 15 + (grassX % 20);
-        canvas.drawRect(
-          Rect.fromLTWH(
-            grassX, 
-            GameConfig.worldHeight - GameConfig.groundHeight - grassHeight, 
-            2, 
-            grassHeight,
-          ),
-          grassPaint,
-        );
-      }
-    }
-    
-    // TODO: Replace with actual vegetation sprites
+  void updateSpeed(double speed) {
+    _currentSpeed = speed;
   }
 }

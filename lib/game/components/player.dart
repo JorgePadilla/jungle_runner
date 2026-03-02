@@ -1,280 +1,331 @@
-import 'dart:math';
 import 'package:flame/components.dart';
+import 'package:flame/flame.dart';
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../config/game_config.dart';
-import '../../utils/constants.dart';
 
-enum PlayerState { running, jumping, sliding, doubleJumping }
+enum PlayerState { running, jumping, doubleJumping, sliding }
 
-/// Player character component (monkey)
-class Player extends RectangleComponent {
+class Player extends PositionComponent {
+  final double groundY;
+
   PlayerState _state = PlayerState.running;
   double _velocityY = 0;
-  double _groundY = 0;
-  bool _canDoubleJump = false;
-  double _slideTimer = 0;
+  bool _isOnGround = true;
+  bool _hasDoubleJumped = false;
+  bool _isShieldActive = false;
+  bool _isMagnetActive = false;
+  double _shieldTimer = 0;
+  double _magnetTimer = 0;
   String _skinId = 'default';
-  bool _hasShield = false;
-  bool _hasMagnet = false;
-  
-  // Animation properties for visual feedback
-  double _bounceOffset = 0;
-  double _bounceTimer = 0;
-  
-  Player({required double groundY}) {
-    _groundY = groundY;
+  double _slideTimer = 0;
+
+  /// Brief invincibility after state transitions to prevent one-frame deaths
+  double _invincibilityTimer = 0;
+  static const double _transitionInvincibility = 0.1; // 100ms (~6 frames)
+
+  // Sprite components (nullable until onLoad completes)
+  SpriteAnimationComponent? _runAnimation;
+  SpriteComponent? _jumpSprite;
+  SpriteComponent? _slideSprite;
+  SpriteAnimationComponent? _idleAnimation;
+  bool _spritesLoaded = false;
+
+  // Current visible sprite
+  Component? _currentSprite;
+
+  // Hitbox shrink factor -- makes collisions more forgiving
+  static const double _hitboxShrink = 0.25; // 25% smaller on each side
+
+  Player({required this.groundY}) {
     size = Vector2(GameConfig.playerWidth, GameConfig.playerHeight);
+    anchor = Anchor.topLeft;
     position = Vector2(100, groundY - GameConfig.playerHeight);
-    anchor = Anchor.bottomLeft;
   }
-  
+
+  @override
+  Future<void> onLoad() async {
+    await _loadSprites();
+    _setCurrentSprite();
+  }
+
+  Future<void> _loadSprites() async {
+    // Load run animation (12 frames)
+    final runImage = await Flame.images.load('player/run_$_skinId.png');
+    final runAnimation = SpriteAnimation.fromFrameData(
+      runImage,
+      SpriteAnimationData.sequenced(
+        amount: 12,
+        stepTime: 0.05,
+        textureSize: Vector2(32, 32),
+      ),
+    );
+    _runAnimation = SpriteAnimationComponent(
+      animation: runAnimation,
+      size: size,
+    );
+
+    // Load idle animation (11 frames)
+    final idleImage = await Flame.images.load('player/idle_$_skinId.png');
+    final idleAnimation = SpriteAnimation.fromFrameData(
+      idleImage,
+      SpriteAnimationData.sequenced(
+        amount: 11,
+        stepTime: 0.05,
+        textureSize: Vector2(32, 32),
+      ),
+    );
+    _idleAnimation = SpriteAnimationComponent(
+      animation: idleAnimation,
+      size: size,
+    );
+
+    // Load single sprites
+    final jumpSprite = await Sprite.load('player/jump_$_skinId.png');
+    _jumpSprite = SpriteComponent(
+      sprite: jumpSprite,
+      size: size,
+    );
+
+    final slideSprite = await Sprite.load('player/slide_$_skinId.png');
+    _slideSprite = SpriteComponent(
+      sprite: slideSprite,
+      size: size,
+    );
+
+    // Add all sprites as children but keep them invisible initially
+    add(_runAnimation!);
+    add(_jumpSprite!);
+    add(_slideSprite!);
+    add(_idleAnimation!);
+
+    _jumpSprite!.opacity = 0;
+    _slideSprite!.opacity = 0;
+    _idleAnimation!.opacity = 0;
+
+    _spritesLoaded = true;
+  }
+
+  void _setCurrentSprite() {
+    if (!_spritesLoaded) return;
+
+    // Hide all sprites
+    _runAnimation?.opacity = 0;
+    _jumpSprite?.opacity = 0;
+    _slideSprite?.opacity = 0;
+    _idleAnimation?.opacity = 0;
+
+    // Show appropriate sprite based on state
+    switch (_state) {
+      case PlayerState.running:
+        _runAnimation?.opacity = 1;
+        _currentSprite = _runAnimation;
+        break;
+      case PlayerState.jumping:
+      case PlayerState.doubleJumping:
+        _jumpSprite?.opacity = 1;
+        _currentSprite = _jumpSprite;
+        break;
+      case PlayerState.sliding:
+        _slideSprite?.opacity = 1;
+        _currentSprite = _slideSprite;
+        break;
+    }
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
-    
-    // Update physics
     _updatePhysics(dt);
-    
-    // Update slide timer
+    _updatePowerUps(dt);
+    if (_invincibilityTimer > 0) _invincibilityTimer -= dt;
+  }
+
+  void _updatePhysics(double dt) {
+    // Apply gravity
+    if (!_isOnGround) {
+      _velocityY += GameConfig.gravity * dt;
+    }
+
+    // Update position
+    position.y += _velocityY * dt;
+
+    // Check ground collision
+    final groundPosition = groundY - size.y;
+    if (position.y >= groundPosition) {
+      position.y = groundPosition;
+      _velocityY = 0;
+      _isOnGround = true;
+      _hasDoubleJumped = false;
+
+      if (_state == PlayerState.jumping || _state == PlayerState.doubleJumping) {
+        setState(PlayerState.running);
+      }
+    } else {
+      _isOnGround = false;
+    }
+
+    // Update sliding
     if (_state == PlayerState.sliding) {
       _slideTimer -= dt;
+      size.y = GameConfig.slideHeight;
+      position.y = groundY - size.y;
       if (_slideTimer <= 0) {
         setState(PlayerState.running);
       }
+    } else {
+      size.y = GameConfig.playerHeight;
     }
-    
-    // Update visual bounce animation
-    _bounceTimer += dt * 8; // Animation speed
-    _bounceOffset = (sin(_bounceTimer) * 2).abs(); // Subtle bounce when running
   }
-  
+
+  void _updatePowerUps(double dt) {
+    if (_isShieldActive) {
+      _shieldTimer -= dt;
+      if (_shieldTimer <= 0) {
+        _isShieldActive = false;
+      }
+    }
+
+    if (_isMagnetActive) {
+      _magnetTimer -= dt;
+      if (_magnetTimer <= 0) {
+        _isMagnetActive = false;
+      }
+    }
+  }
+
+  void jump() {
+    if (_isOnGround) {
+      _velocityY = -GameConfig.jumpVelocity;  // Negative = upward
+      setState(PlayerState.jumping);
+      _isOnGround = false;
+    } else if (!_hasDoubleJumped && _state == PlayerState.jumping) {
+      _velocityY = -GameConfig.doubleJumpVelocity;  // Negative = upward
+      setState(PlayerState.doubleJumping);
+      _hasDoubleJumped = true;
+    }
+  }
+
+  void slide() {
+    if (_isOnGround && _state == PlayerState.running) {
+      _slideTimer = GameConfig.slideDuration;
+      setState(PlayerState.sliding);
+    }
+  }
+
+  void setState(PlayerState newState) {
+    // Grant brief invincibility on state transitions to prevent
+    // one-frame collision glitches (e.g. slide -> run size mismatch)
+    if (_state != newState) {
+      _invincibilityTimer = _transitionInvincibility;
+    }
+    _state = newState;
+    _setCurrentSprite();
+  }
+
+  void activateShield(double duration) {
+    _isShieldActive = true;
+    _shieldTimer = duration;
+  }
+
+  void activateMagnet(double duration) {
+    _isMagnetActive = true;
+    _magnetTimer = duration;
+  }
+
+  bool get isShieldActive => _isShieldActive;
+  bool get isMagnetActive => _isMagnetActive;
+
+  /// True during brief invincibility after state transitions
+  bool get isInvincible => _invincibilityTimer > 0;
+
+  // Additional getters expected by the game
+  bool get hasShield => _isShieldActive;
+  bool get hasMagnet => _isMagnetActive;
+  double get magnetRange => GameConfig.magnetRange;
+  PlayerState get state => _state;
+
+  /// Collision bounds -- shrunk by _hitboxShrink for forgiving gameplay.
+  Rect get bounds {
+    final shrinkX = size.x * _hitboxShrink;
+    final shrinkY = size.y * _hitboxShrink;
+    return Rect.fromLTWH(
+      position.x + shrinkX,
+      position.y + shrinkY,
+      size.x - shrinkX * 2,
+      size.y - shrinkY * 2,
+    );
+  }
+
+  Future<void> setSkin(String skinId) async {
+    _skinId = skinId;
+
+    // If sprites haven't loaded yet, just store the ID -- onLoad will use it
+    if (!_spritesLoaded) return;
+
+    // Remove old sprites
+    _runAnimation?.removeFromParent();
+    _jumpSprite?.removeFromParent();
+    _slideSprite?.removeFromParent();
+    _idleAnimation?.removeFromParent();
+    _spritesLoaded = false;
+
+    // Reload sprites with new skin
+    await _loadSprites();
+    _setCurrentSprite();
+  }
+
   @override
   void render(Canvas canvas) {
-    // Draw player based on skin
-    _drawPlayer(canvas);
-    
-    // Draw power-up effects
-    if (_hasShield) {
+    super.render(canvas);
+
+    // Draw shield effect if active
+    if (_isShieldActive) {
       _drawShield(canvas);
     }
-    if (_hasMagnet) {
+
+    // Draw magnet effect if active
+    if (_isMagnetActive) {
       _drawMagnet(canvas);
     }
   }
-  
-  void _updatePhysics(double dt) {
-    if (_state == PlayerState.jumping || _state == PlayerState.doubleJumping) {
-      // Apply gravity
-      _velocityY += GameConfig.gravity * dt;
-      position.y += _velocityY * dt;
-      
-      // Check if landed
-      if (position.y >= _groundY - size.y) {
-        position.y = _groundY - size.y;
-        _velocityY = 0;
-        setState(PlayerState.running);
-        _canDoubleJump = false;
-      }
-    } else if (_state == PlayerState.running) {
-      // Ensure player stays on ground with subtle bounce
-      position.y = _groundY - size.y + _bounceOffset;
-    }
-  }
-  
-  void _drawPlayer(Canvas canvas) {
-    Paint playerPaint;
-    
-    // Choose color based on skin
-    switch (_skinId) {
-      case 'golden':
-        playerPaint = Paint()..color = GameConstants.gold;
-        break;
-      case 'dark':
-        playerPaint = Paint()..color = const Color(0xFF2F2F2F);
-        break;
-      case 'rainbow':
-        // Create rainbow gradient
-        playerPaint = Paint()
-          ..shader = LinearGradient(
-            colors: [
-              Colors.red,
-              Colors.orange,
-              Colors.yellow,
-              Colors.green,
-              Colors.blue,
-              Colors.indigo,
-              Colors.purple,
-            ],
-          ).createShader(Rect.fromLTWH(0, 0, size.x, size.y));
-        break;
-      case 'ninja':
-        playerPaint = Paint()..color = const Color(0xFF1a1a1a);
-        break;
-      default:
-        playerPaint = Paint()..color = GameConstants.brown;
-        break;
-    }
-    
-    // Main body
-    final bodyRect = Rect.fromLTWH(
-      0, 
-      _state == PlayerState.sliding ? size.y - GameConfig.slideHeight : 0,
-      size.x,
-      _state == PlayerState.sliding ? GameConfig.slideHeight : size.y,
-    );
-    
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(bodyRect, const Radius.circular(8)),
-      playerPaint,
-    );
-    
-    // Simple face (eyes and mouth)
-    final eyePaint = Paint()..color = GameConstants.black;
-    final eyeSize = 4.0;
-    
-    // Eyes
-    canvas.drawCircle(
-      Offset(size.x * 0.3, bodyRect.top + 15),
-      eyeSize,
-      eyePaint,
-    );
-    canvas.drawCircle(
-      Offset(size.x * 0.7, bodyRect.top + 15),
-      eyeSize,
-      eyePaint,
-    );
-    
-    // Mouth (simple arc)
-    final mouthPaint = Paint()
-      ..color = GameConstants.black
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    
-    final mouthPath = Path();
-    mouthPath.addArc(
-      Rect.fromCenter(
-        center: Offset(size.x * 0.5, bodyRect.top + 25),
-        width: 15,
-        height: 10,
-      ),
-      0,
-      3.14159, // pi (half circle)
-    );
-    canvas.drawPath(mouthPath, mouthPaint);
-    
-    // TODO: Replace with actual monkey sprite
-  }
-  
+
   void _drawShield(Canvas canvas) {
-    final shieldPaint = Paint()
+    final paint = Paint()
       ..color = Colors.blue.withOpacity(0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3;
-    
-    canvas.drawCircle(
-      Offset(size.x / 2, size.y / 2),
-      size.x * 0.8,
-      shieldPaint,
-    );
+
+    final center = size / 2;
+    final radius = math.max(size.x, size.y) / 2 + 5;
+
+    canvas.drawCircle(center.toOffset(), radius, paint);
   }
-  
+
   void _drawMagnet(Canvas canvas) {
-    final magnetPaint = Paint()
-      ..color = Colors.purple.withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-    
+    final paint = Paint()
+      ..color = Colors.yellow.withOpacity(0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    final center = size / 2;
+
     // Draw magnetic field lines
-    for (int i = 0; i < 3; i++) {
-      canvas.drawCircle(
-        Offset(size.x / 2, size.y / 2),
-        size.x * (0.6 + i * 0.3),
-        Paint()
-          ..color = Colors.purple.withOpacity(0.2 - i * 0.05)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
+    for (int i = 0; i < 8; i++) {
+      final angle = (i / 8) * 2 * math.pi;
+      final startRadius = size.x / 2 + 10;
+      final endRadius = size.x / 2 + 20;
+
+      final start = center + Vector2(
+        math.cos(angle) * startRadius,
+        math.sin(angle) * startRadius,
       );
+      final end = center + Vector2(
+        math.cos(angle) * endRadius,
+        math.sin(angle) * endRadius,
+      );
+
+      canvas.drawLine(start.toOffset(), end.toOffset(), paint);
     }
   }
-  
-  /// Make the player jump
-  bool jump() {
-    if (_state == PlayerState.running) {
-      setState(PlayerState.jumping);
-      _velocityY = -GameConfig.jumpVelocity;
-      _canDoubleJump = true;
-      return true;
-    } else if (_state == PlayerState.jumping && _canDoubleJump) {
-      setState(PlayerState.doubleJumping);
-      _velocityY = -GameConfig.doubleJumpVelocity;
-      _canDoubleJump = false;
-      return true;
-    }
-    return false;
-  }
-  
-  /// Make the player slide
-  void slide() {
-    if (_state == PlayerState.running) {
-      setState(PlayerState.sliding);
-      _slideTimer = GameConfig.slideDuration;
-    }
-  }
-  
-  /// Set player state
-  void setState(PlayerState newState) {
-    _state = newState;
-  }
-  
-  /// Get current state
-  PlayerState get state => _state;
-  
-  /// Check if player is on ground
-  bool get isOnGround => 
-      _state == PlayerState.running || _state == PlayerState.sliding;
-  
-  /// Get player bounds for collision detection
-  Rect get bounds {
-    return Rect.fromLTWH(
-      position.x,
-      _state == PlayerState.sliding 
-          ? position.y + (size.y - GameConfig.slideHeight)
-          : position.y,
-      size.x,
-      _state == PlayerState.sliding ? GameConfig.slideHeight : size.y,
-    );
-  }
-  
-  /// Set player skin
-  void setSkin(String skinId) {
-    _skinId = skinId;
-  }
-  
-  /// Activate shield power-up
-  void activateShield(double duration) {
-    _hasShield = true;
-    
-    // Remove shield after duration
-    Future.delayed(Duration(milliseconds: (duration * 1000).round()), () {
-      _hasShield = false;
-    });
-  }
-  
-  /// Activate magnet power-up
-  void activateMagnet(double duration) {
-    _hasMagnet = true;
-    
-    // Remove magnet after duration
-    Future.delayed(Duration(milliseconds: (duration * 1000).round()), () {
-      _hasMagnet = false;
-    });
-  }
-  
-  /// Check if player has shield
-  bool get hasShield => _hasShield;
-  
-  /// Check if player has magnet
-  bool get hasMagnet => _hasMagnet;
-  
-  /// Get magnet range
-  double get magnetRange => GameConfig.magnetRange;
 }
