@@ -78,4 +78,5 @@ class StorageKeys {
   static const String deathCount = 'death_count';
   static const String lastDailyReward = 'last_daily_reward';
   static const String soundEnabled = 'sound_enabled';
+  static const String hapticsEnabled = 'haptics_enabled';
 }

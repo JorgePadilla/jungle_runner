@@ -146,6 +146,15 @@ class StorageService {
     await _prefs?.setBool(StorageKeys.soundEnabled, enabled);
   }
   
+  // Haptic Settings
+  Future<bool> getHapticsEnabled() async {
+    return _prefs?.getBool(StorageKeys.hapticsEnabled) ?? true;
+  }
+
+  Future<void> setHapticsEnabled(bool enabled) async {
+    await _prefs?.setBool(StorageKeys.hapticsEnabled, enabled);
+  }
+
   // Clear all data (for testing)
   Future<void> clearAll() async {
     await _prefs?.clear();

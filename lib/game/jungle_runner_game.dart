@@ -31,7 +31,10 @@ class JungleRunnerGame extends FlameGame
   // Game state
   GameState _gameState = GameState.playing;
   int _coinsCollected = 0;
+  bool _hapticsEnabled = true;
   int _currentRunCoins = 0;
+  int _highScore = 0;
+  bool _highScoreBroken = false;
   String _selectedSkin = 'default';
   
   // Power-up timers
@@ -46,15 +49,18 @@ class JungleRunnerGame extends FlameGame
   Function(int score, int coins)? onScoreChanged;
   Function()? onGameOver;
   Function()? onPause;
+  Function()? onHighScoreBroken;
   
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     
-    // Load player skin preference
+    // Load preferences
     final storageService = await StorageService.getInstance();
     _selectedSkin = await storageService.getSelectedSkin();
     _coinsCollected = await storageService.getTotalCoins();
+    _hapticsEnabled = await storageService.getHapticsEnabled();
+    _highScore = await storageService.getHighScore();
     
     // Initialize game components
     await _initializeGame();
@@ -117,6 +123,18 @@ class JungleRunnerGame extends FlameGame
       _difficultyManager.score, 
       _coinsCollected + _currentRunCoins,
     );
+
+    // Check for high score break
+    if (!_highScoreBroken && _difficultyManager.score > _highScore && _difficultyManager.score > 0) {
+      _highScoreBroken = true;
+      _onHighScoreBroken();
+    }
+  }
+
+  void _onHighScoreBroken() {
+    // Visual feedback for breaking high score
+    _vibrate(HapticFeedback.mediumImpact);
+    onHighScoreBroken?.call();
   }
   
   void _updatePowerUpTimers(double dt) {
@@ -159,10 +177,12 @@ class JungleRunnerGame extends FlameGame
   
   void _collectCoin(Coin coin) {
     _currentRunCoins += coin.coinValue;
+    _vibrate(HapticFeedback.lightImpact);
     // TODO: Play coin collection sound
   }
   
   void _collectPowerUp(PowerUp powerUp) {
+    _vibrate(HapticFeedback.mediumImpact);
     switch (powerUp.type) {
       case PowerUpType.shield:
         _player.activateShield(powerUp.getDuration());
@@ -179,6 +199,12 @@ class JungleRunnerGame extends FlameGame
   
   void _gameOver() {
     _gameState = GameState.gameOver;
+    _vibrate(HapticFeedback.heavyImpact);
+
+    // Camera shake effect
+    // In newer Flame versions, we use viewports/viewfinders or custom effects
+    // For simplicity, we'll use the viewport shake if available or skip for now
+    // Actually, let's use a simpler way if shake is not directly on camera
     
     // Save coins and high score
     _saveGameData();
@@ -212,12 +238,17 @@ class JungleRunnerGame extends FlameGame
     final currentTime = DateTime.now().millisecondsSinceEpoch / 1000.0;
     
     // Check for double tap (for double jump)
+    bool jumped = false;
     if (currentTime - _lastTapTime < 0.3) {
       // Double tap - try double jump
-      _player.jump();
+      jumped = _player.jump();
     } else {
       // Single tap - jump
-      _player.jump();
+      jumped = _player.jump();
+    }
+
+    if (jumped) {
+      _vibrate(HapticFeedback.selectionClick);
     }
     
     _lastTapTime = currentTime;
@@ -249,6 +280,7 @@ class JungleRunnerGame extends FlameGame
   void resetGame() {
     _gameState = GameState.playing;
     _currentRunCoins = 0;
+    _highScoreBroken = false;
     _shieldTimer = 0;
     _magnetTimer = 0;
     
@@ -308,9 +340,16 @@ class JungleRunnerGame extends FlameGame
   void handleSwipe(String direction) {
     if (direction == 'down') {
       _handleSwipeDown();
+      _vibrate(HapticFeedback.selectionClick);
     }
   }
   
+  void _vibrate(Future<void> Function() feedback) {
+    if (_hapticsEnabled) {
+      feedback();
+    }
+  }
+
   // Update skin
   Future<void> updatePlayerSkin(String skinId) async {
     _selectedSkin = skinId;
