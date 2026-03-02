@@ -83,6 +83,42 @@ class GameConfig {
     'rainbow': 1000,
     'ninja': 750,
   };
+
+  // Upgrades
+  static const int maxUpgradeLevel = 5;
+
+  static const Map<int, int> shieldUpgradePrices = {
+    2: 500,
+    3: 1500,
+    4: 4000,
+    5: 10000,
+  };
+
+  static const Map<int, double> shieldDurations = {
+    1: 5.0,
+    2: 7.0,
+    3: 10.0,
+    4: 14.0,
+    5: 20.0,
+  };
+
+  static const Map<int, int> magnetUpgradePrices = {
+    2: 600,
+    3: 1800,
+    4: 5000,
+    5: 12000,
+  };
+
+  static const Map<int, double> magnetDurations = {
+    1: 8.0,
+    2: 10.0,
+    3: 13.0,
+    4: 18.0,
+    5: 25.0,
+  };
+
+  // Boosters
+  static const int doubleCoinsPrice = 25000;
   
   static const Map<String, String> skinNames = {
     'default': 'Ninja Frog',

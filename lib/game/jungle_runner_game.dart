@@ -2,6 +2,7 @@ import 'package:flame/camera.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'components/player.dart';
 import 'components/ground.dart';
@@ -46,6 +47,11 @@ class JungleRunnerGame extends FlameGame
   int _highScore = 0;
   bool _highScoreBroken = false;
   String _selectedSkin = 'default';
+
+  // Upgrades and Boosters
+  int _shieldLevel = 1;
+  int _magnetLevel = 1;
+  bool _isDoubleCoinsActive = false;
 
   // Per-run stats for missions
   int _runShieldsUsed = 0;
@@ -93,6 +99,11 @@ class JungleRunnerGame extends FlameGame
     _coinsCollected = await storageService.getTotalCoins();
     _hapticsEnabled = await storageService.getHapticsEnabled();
     _highScore = await storageService.getHighScore();
+
+    // Load upgrades and boosters
+    _shieldLevel = await storageService.getShieldLevel();
+    _magnetLevel = await storageService.getMagnetLevel();
+    _isDoubleCoinsActive = await storageService.isDoubleCoinsPurchased();
 
     // Initialize game components
     await _initializeGame();
@@ -260,7 +271,8 @@ class JungleRunnerGame extends FlameGame
   }
 
   void _collectCoin(Coin coin) {
-    _currentRunCoins += coin.coinValue;
+    final value = _isDoubleCoinsActive ? coin.coinValue * 2 : coin.coinValue;
+    _currentRunCoins += value;
     _vibrate(HapticFeedback.lightImpact);
 
     // Play coin collection sound
@@ -288,14 +300,16 @@ class JungleRunnerGame extends FlameGame
 
     switch (powerUp.type) {
       case PowerUpType.shield:
-        _player.activateShield(powerUp.getDuration());
-        _shieldTimer = powerUp.getDuration();
+        final duration = GameConfig.shieldDurations[_shieldLevel] ?? powerUp.getDuration();
+        _player.activateShield(duration);
+        _shieldTimer = duration;
         _runShieldsUsed++;
         break;
 
       case PowerUpType.magnet:
-        _player.activateMagnet(powerUp.getDuration());
-        _magnetTimer = powerUp.getDuration();
+        final duration = GameConfig.magnetDurations[_magnetLevel] ?? powerUp.getDuration();
+        _player.activateMagnet(duration);
+        _magnetTimer = duration;
         _runMagnetsUsed++;
         break;
     }
