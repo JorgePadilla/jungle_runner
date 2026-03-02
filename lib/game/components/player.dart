@@ -197,16 +197,19 @@ class Player extends RectangleComponent {
   }
   
   /// Make the player jump
-  void jump() {
+  bool jump() {
     if (_state == PlayerState.running) {
       setState(PlayerState.jumping);
       _velocityY = -GameConfig.jumpVelocity;
       _canDoubleJump = true;
+      return true;
     } else if (_state == PlayerState.jumping && _canDoubleJump) {
       setState(PlayerState.doubleJumping);
       _velocityY = -GameConfig.doubleJumpVelocity;
       _canDoubleJump = false;
+      return true;
     }
+    return false;
   }
   
   /// Make the player slide

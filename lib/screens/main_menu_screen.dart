@@ -6,6 +6,7 @@ import '../services/storage_service.dart';
 import '../services/ad_service.dart';
 import 'game_screen.dart';
 import 'shop_screen.dart';
+import 'settings_screen.dart';
 
 /// Main menu screen with play button, shop, and daily rewards
 class MainMenuScreen extends StatefulWidget {
@@ -19,8 +20,10 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     with TickerProviderStateMixin {
   late StorageService _storageService;
   late AnimationController _animationController;
+  late AnimationController _pulseController;
   late Animation<double> _titleAnimation;
   late Animation<Offset> _buttonAnimation;
+  late Animation<double> _pulseAnimation;
   
   BannerAd? _bannerAd;
   int _totalCoins = 0;
@@ -59,6 +62,15 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     ));
     
     _animationController.forward();
+
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
   
   Future<void> _initializeServices() async {
@@ -86,6 +98,7 @@ class _MainMenuScreenState extends State<MainMenuScreen>
   @override
   void dispose() {
     _animationController.dispose();
+    _pulseController.dispose();
     _bannerAd?.dispose();
     super.dispose();
   }
@@ -230,11 +243,14 @@ class _MainMenuScreenState extends State<MainMenuScreen>
           child: Column(
             children: [
               // Play button
-              _buildMenuButton(
-                'PLAY',
-                Icons.play_arrow,
-                GameConstants.primaryGreen,
-                () => _navigateToGame(),
+              ScaleTransition(
+                scale: _pulseAnimation,
+                child: _buildMenuButton(
+                  'PLAY',
+                  Icons.play_arrow,
+                  GameConstants.primaryGreen,
+                  () => _navigateToGame(),
+                ),
               ),
               
               const SizedBox(height: 20),
@@ -257,6 +273,16 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                   GameConstants.gold,
                   () => _claimDailyReward(),
                 ),
+
+              const SizedBox(height: 20),
+
+              // Settings button
+              _buildMenuButton(
+                'SETTINGS',
+                Icons.settings,
+                Colors.blueGrey,
+                () => _navigateToSettings(),
+              ),
             ],
           ),
         ),
@@ -318,6 +344,21 @@ class _MainMenuScreenState extends State<MainMenuScreen>
     });
   }
   
+  void _navigateToSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const SettingsScreen(),
+      ),
+    ).then((_) {
+      // Refresh settings when returning from settings
+      _loadGameData().then((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    });
+  }
+
   void _navigateToShop() {
     Navigator.of(context).push(
       MaterialPageRoute(

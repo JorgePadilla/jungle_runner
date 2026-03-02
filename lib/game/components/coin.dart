@@ -11,6 +11,7 @@ class Coin extends RectangleComponent {
   double _bounceOffset = 0;
   double _animationTimer = 0;
   bool _isCollected = false;
+  double _collectTimer = 0;
   final int value = GameConfig.coinValue;
   
   Coin({required Vector2 position}) {
@@ -26,7 +27,16 @@ class Coin extends RectangleComponent {
   void update(double dt) {
     super.update(dt);
     
-    if (_isCollected) return;
+    if (_isCollected) {
+      _collectTimer += dt;
+      // Fly up and fade out
+      position.y -= 200 * dt;
+      scale = Vector2.all(1.0 + _collectTimer * 2);
+      if (_collectTimer >= 0.3) {
+        removeFromParent();
+      }
+      return;
+    }
     
     // Move coin left
     position.x -= _gameSpeed * dt;
@@ -42,10 +52,17 @@ class Coin extends RectangleComponent {
   
   @override
   void render(Canvas canvas) {
-    if (_isCollected) return;
-    
     canvas.save();
     
+    if (_isCollected) {
+      // Fade out effect
+      final opacity = (1.0 - (_collectTimer / 0.3)).clamp(0.0, 1.0);
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, size.x, size.y),
+        Paint()..color = Colors.white.withOpacity(opacity),
+      );
+    }
+
     // Apply rotation for spinning effect
     canvas.translate(size.x / 2, size.y / 2);
     canvas.rotate(_rotationAngle);
@@ -93,6 +110,10 @@ class Coin extends RectangleComponent {
     // Add shine effect
     _drawShineEffect(canvas);
     
+    if (_isCollected) {
+      canvas.restore();
+    }
+
     canvas.restore();
     
     // TODO: Replace with actual coin sprite
@@ -167,22 +188,8 @@ class Coin extends RectangleComponent {
   /// Collect the coin (plays animation and marks as collected)
   void collect() {
     if (_isCollected) return;
-    
     _isCollected = true;
-    
-    // Play collection animation
-    _playCollectionAnimation();
-  }
-  
-  void _playCollectionAnimation() {
-    // Scale up and fade out animation
-    final animationDuration = 0.3;
-    final startTime = DateTime.now().millisecondsSinceEpoch;
-    
-    // Simple animation by manipulating properties over time
-    Future.delayed(Duration(milliseconds: (animationDuration * 1000).round()), () {
-      removeFromParent();
-    });
+    _collectTimer = 0;
   }
   
   /// Check if coin is collected

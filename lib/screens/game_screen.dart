@@ -19,6 +19,8 @@ class _GameScreenState extends State<GameScreen> {
   int _currentCoins = 0;
   bool _isPaused = false;
   bool _isGameOver = false;
+  bool _showHighScoreBroken = false;
+  int _countdownValue = 0;
   
   @override
   void initState() {
@@ -54,6 +56,23 @@ class _GameScreenState extends State<GameScreen> {
         });
       }
     };
+
+    _game.onHighScoreBroken = () {
+      if (mounted) {
+        setState(() {
+          _showHighScoreBroken = true;
+        });
+
+        // Hide after 3 seconds
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _showHighScoreBroken = false;
+            });
+          }
+        });
+      }
+    };
   }
   
   @override
@@ -69,8 +88,14 @@ class _GameScreenState extends State<GameScreen> {
           // HUD overlay
           if (!_isGameOver) _buildHUD(),
           
+          // High Score Broken Toast
+          if (_showHighScoreBroken && !_isGameOver) _buildHighScoreToast(),
+
           // Pause overlay
-          if (_isPaused && !_isGameOver) _buildPauseOverlay(),
+          if (_isPaused && !_isGameOver && _countdownValue == 0) _buildPauseOverlay(),
+
+          // Countdown overlay
+          if (_countdownValue > 0) _buildCountdownOverlay(),
           
           // Game over overlay
           if (_isGameOver) 
@@ -87,6 +112,45 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
   
+  Widget _buildHighScoreToast() {
+    return Positioned(
+      top: 100,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            color: GameConstants.gold.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star, color: Colors.white),
+              SizedBox(width: 10),
+              Text(
+                'NEW BEST!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHUD() {
     return SafeArea(
       child: Padding(
@@ -243,6 +307,29 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
   
+  Widget _buildCountdownOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.3),
+      child: Center(
+        child: Text(
+          '$_countdownValue',
+          style: const TextStyle(
+            fontSize: 120,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                blurRadius: 20,
+                color: Colors.black,
+                offset: Offset(5, 5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPauseOverlay() {
     return Container(
       color: Colors.black.withOpacity(0.8),
@@ -310,9 +397,29 @@ class _GameScreenState extends State<GameScreen> {
   
   void _resumeGame() {
     setState(() {
-      _isPaused = false;
+      _countdownValue = 3;
     });
-    _game.resumeGame();
+
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _countdownValue--;
+        });
+
+        if (_countdownValue > 0) {
+          _startCountdown();
+        } else {
+          setState(() {
+            _isPaused = false;
+          });
+          _game.resumeGame();
+        }
+      }
+    });
   }
   
   void _restartGame() {
