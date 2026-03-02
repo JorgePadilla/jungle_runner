@@ -201,10 +201,8 @@ class JungleRunnerGame extends FlameGame
     _gameState = GameState.gameOver;
     _vibrate(HapticFeedback.heavyImpact);
 
-    // Camera shake effect
-    // In newer Flame versions, we use viewports/viewfinders or custom effects
-    // For simplicity, we'll use the viewport shake if available or skip for now
-    // Actually, let's use a simpler way if shake is not directly on camera
+    // Pause the engine to freeze the game state
+    pauseEngine();
     
     // Save coins and high score
     _saveGameData();
