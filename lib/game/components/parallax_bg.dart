@@ -52,9 +52,9 @@ class BackgroundLayer extends Component {
   /// so they can never drift apart.
   double _scrollOffset = 0;
 
-  // Original aspect-ratio height for the jungle layers (384x216 source)
-  static const double _sourceW = 384;
-  static const double _sourceH = 216;
+  // Original aspect-ratio height for the jungle layers (400x225 source)
+  static const double _sourceW = 400;
+  static const double _sourceH = 225;
 
   // Extra width on each side to bleed past the viewport edge
   static const double _bleed = 8.0;

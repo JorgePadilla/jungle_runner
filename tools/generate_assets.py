@@ -24,10 +24,10 @@ os.makedirs(os.path.join(BASE, "ui"), exist_ok=True)
 
 # ─── Color Palette ───────────────────────────────────────────────
 # Jungle palette
-SKY_TOP = (135, 206, 235)
-SKY_MID = (176, 224, 230)
-SKY_BOT = (200, 235, 245)
-CLOUD_WHITE = (255, 255, 255, 200)
+SKY_TOP = (25, 30, 80)
+SKY_MID = (40, 60, 120)
+SKY_BOT = (60, 100, 150)
+CLOUD_WHITE = (255, 255, 255, 180)
 
 MOUNTAIN_DARK = (80, 100, 120)
 MOUNTAIN_MID = (100, 130, 150)
@@ -354,136 +354,119 @@ def _apply_rainbow_tint(img):
 def generate_backgrounds():
     """Generate 5-layer parallax background."""
     print("Generating parallax backgrounds...")
-    W, H = 800, 600
     
-    # Layer 0: Sky
-    sky = Image.new("RGBA", (W, H), TRANSPARENT)
+    # Layer 0: Sky (Vertical for portrait)
+    W_sky, H_sky = 400, 800
+    sky = Image.new("RGBA", (W_sky, H_sky), TRANSPARENT)
     d = ImageDraw.Draw(sky)
-    for y in range(H):
-        t = y / H
-        r = int(SKY_TOP[0] * (1-t) + SKY_BOT[0] * t)
-        g = int(SKY_TOP[1] * (1-t) + SKY_BOT[1] * t)
-        b = int(SKY_TOP[2] * (1-t) + SKY_BOT[2] * t)
-        d.line([(0, y), (W, y)], fill=(r, g, b, 255))
+    for y in range(H_sky):
+        t = y / H_sky
+        if t < 0.5:
+            # Top to Mid
+            it = t * 2
+            r = int(SKY_TOP[0] * (1-it) + SKY_MID[0] * it)
+            g = int(SKY_TOP[1] * (1-it) + SKY_MID[1] * it)
+            b = int(SKY_TOP[2] * (1-it) + SKY_MID[2] * it)
+        else:
+            # Mid to Bot
+            it = (t - 0.5) * 2
+            r = int(SKY_MID[0] * (1-it) + SKY_BOT[0] * it)
+            g = int(SKY_MID[1] * (1-it) + SKY_BOT[1] * it)
+            b = int(SKY_MID[2] * (1-it) + SKY_BOT[2] * it)
+        d.line([(0, y), (W_sky, y)], fill=(r, g, b, 255))
     
-    # Add clouds
-    for cx, cy, cw in [(150, 60, 80), (400, 90, 100), (650, 50, 70), (250, 130, 60)]:
-        d.ellipse([cx, cy, cx+cw, cy+cw//3], fill=(255,255,255,180))
-        d.ellipse([cx+cw//4, cy-cw//8, cx+cw*3//4, cy+cw//4], fill=(255,255,255,160))
-        d.ellipse([cx-cw//6, cy+cw//12, cx+cw//3, cy+cw//3], fill=(255,255,255,140))
+    # Add pixel-art clouds (rect-based)
+    for cx, cy, cw in [(50, 100, 60), (200, 150, 80), (300, 80, 50), (120, 220, 70)]:
+        ch = cw // 2
+        # Main body
+        d.rectangle([cx, cy, cx+cw, cy+ch], fill=CLOUD_WHITE)
+        # Top bumps
+        d.rectangle([cx+cw//4, cy-ch//3, cx+cw*3//4, cy], fill=CLOUD_WHITE)
+        d.rectangle([cx+10, cy-ch//5, cx+cw//3, cy], fill=CLOUD_WHITE)
+        # Bottom shading
+        shadow = (200, 200, 220, 150)
+        d.rectangle([cx, cy+ch-4, cx+cw, cy+ch], fill=shadow)
     
-    # Sun
-    d.ellipse([620, 20, 680, 80], fill=(255, 250, 200, 200))
-    d.ellipse([628, 28, 672, 72], fill=(255, 255, 220, 230))
+    # Moon/Sun
+    d.rectangle([280, 40, 320, 80], fill=(255, 255, 230, 200))
+    d.rectangle([285, 45, 315, 75], fill=(255, 255, 255, 255))
     
     sky.save(os.path.join(BASE, "background", "sky.png"))
     
+    # Jungle Layers (consistent 400x225)
+    W, H = 400, 225
+
     # Layer 1: Far mountains
     mountains = Image.new("RGBA", (W, H), TRANSPARENT)
     d = ImageDraw.Draw(mountains)
-    
     points = [(0, H)]
     x = 0
-    while x < W + 50:
-        peak_h = random.randint(200, 350)
+    while x < W + 40:
+        peak_h = random.randint(100, 180)
         points.append((x, H - peak_h))
-        x += random.randint(80, 150)
-        valley_h = random.randint(120, 200)
-        points.append((x, H - valley_h))
         x += random.randint(40, 80)
+        valley_h = random.randint(60, 120)
+        points.append((x, H - valley_h))
+        x += random.randint(20, 50)
     points.append((W, H))
-    
     d.polygon(points, fill=MOUNTAIN_DARK + (180,))
     
-    # Second mountain range (lighter, closer)
     points2 = [(0, H)]
-    x = 30
-    while x < W + 50:
-        peak_h = random.randint(150, 280)
+    x = 20
+    while x < W + 40:
+        peak_h = random.randint(80, 140)
         points2.append((x, H - peak_h))
-        x += random.randint(60, 120)
-        valley_h = random.randint(100, 180)
+        x += random.randint(30, 60)
+        valley_h = random.randint(50, 100)
         points2.append((x, H - valley_h))
-        x += random.randint(30, 70)
+        x += random.randint(15, 40)
     points2.append((W, H))
     d.polygon(points2, fill=MOUNTAIN_MID + (160,))
-    
     mountains.save(os.path.join(BASE, "background", "mountains.png"))
     
-    # Layer 2: Mid trees (forest silhouette)
+    # Layer 2: Mid trees
     mid_trees = Image.new("RGBA", (W, H), TRANSPARENT)
     d = ImageDraw.Draw(mid_trees)
-    
-    for tx in range(0, W, 35):
-        tree_h = random.randint(150, 250)
-        tree_w = random.randint(40, 60)
+    for tx in range(0, W, 25):
+        tree_h = random.randint(120, 200)
+        tree_w = random.randint(30, 50)
         tree_top = H - tree_h
-        
-        # Trunk
-        trunk_w = tree_w // 5
-        d.rectangle([tx + tree_w//2 - trunk_w//2, H-80, tx + tree_w//2 + trunk_w//2, H], 
-                    fill=LOG_DARK + (150,))
-        
-        # Foliage (multiple overlapping circles)
+        d.rectangle([tx + tree_w//2 - 2, H-40, tx + tree_w//2 + 2, H], fill=LOG_DARK + (150,))
         foliage_color = TREE_DARK + (160,)
-        d.ellipse([tx, tree_top, tx+tree_w, tree_top+tree_h//2], fill=foliage_color)
-        d.ellipse([tx-10, tree_top+tree_h//4, tx+tree_w+10, tree_top+tree_h*3//4], fill=foliage_color)
-    
+        d.rectangle([tx, tree_top, tx+tree_w, tree_top+tree_h//2], fill=foliage_color)
+        d.rectangle([tx-5, tree_top+10, tx+tree_w+5, tree_top+tree_h//2+10], fill=foliage_color)
     mid_trees.save(os.path.join(BASE, "background", "mid_trees.png"))
     
     # Layer 3: Near trees
     near_trees = Image.new("RGBA", (W, H), TRANSPARENT)
     d = ImageDraw.Draw(near_trees)
-    
-    for tx in range(0, W, 70):
-        tree_h = random.randint(200, 350)
-        tree_w = random.randint(50, 80)
+    for tx in range(0, W, 50):
+        tree_h = random.randint(160, 225)
+        tree_w = random.randint(40, 70)
         tree_top = H - tree_h
-        
-        # Thick trunk
-        trunk_w = tree_w // 3
+        trunk_w = tree_w // 4
         trunk_x = tx + tree_w//2 - trunk_w//2
-        d.rectangle([trunk_x, H-120, trunk_x+trunk_w, H], fill=LOG_MID + (200,))
-        # Trunk detail
-        for ty in range(H-120, H, 15):
-            d.line([(trunk_x, ty), (trunk_x+trunk_w, ty)], fill=LOG_DARK + (100,), width=1)
-        
-        # Big foliage
-        d.ellipse([tx-15, tree_top, tx+tree_w+15, tree_top+tree_h*2//3], fill=TREE_MID + (180,))
-        d.ellipse([tx-5, tree_top+20, tx+tree_w+5, tree_top+tree_h//2], fill=TREE_LIGHT + (140,))
-        
-        # Vines hanging
-        for vx in range(tx, tx+tree_w, 15):
-            vine_len = random.randint(30, 80)
-            vine_start = tree_top + tree_h//3
-            for vy in range(vine_start, vine_start + vine_len, 2):
-                px(near_trees, vx + int(math.sin(vy*0.1)*3), vy, VINE_GREEN + (180,))
-    
+        d.rectangle([trunk_x, H-60, trunk_x+trunk_w, H], fill=LOG_MID + (200,))
+        d.rectangle([tx-10, tree_top, tx+tree_w+10, tree_top+tree_h*2//3], fill=TREE_MID + (180,))
+        d.rectangle([tx, tree_top+15, tx+tree_w, tree_top+tree_h//2], fill=TREE_LIGHT + (140,))
+        for vx in range(tx, tx+tree_w, 12):
+            vine_len = random.randint(20, 60)
+            vine_start = tree_top + 40
+            d.line([(vx, vine_start), (vx, vine_start + vine_len)], fill=VINE_GREEN + (180,), width=1)
     near_trees.save(os.path.join(BASE, "background", "near_trees.png"))
     
-    # Layer 4: Close vegetation (bushes, ferns)
+    # Layer 4: Vegetation
     vegetation = Image.new("RGBA", (W, H), TRANSPARENT)
     d = ImageDraw.Draw(vegetation)
-    
-    ground_y = H - 100
-    
-    for bx in range(0, W, 25):
-        bush_h = random.randint(30, 60)
-        bush_w = random.randint(25, 45)
-        
-        # Bush
-        d.ellipse([bx, ground_y - bush_h, bx + bush_w, ground_y + 5], 
-                  fill=TREE_DARK + (220,))
-        d.ellipse([bx+5, ground_y - bush_h + 5, bx + bush_w - 5, ground_y], 
-                  fill=TREE_MID + (200,))
-        
-        # Fern/grass blades
+    ground_y = H - 50
+    for bx in range(0, W, 20):
+        bush_h = random.randint(20, 45)
+        bush_w = random.randint(20, 40)
+        d.rectangle([bx, ground_y - bush_h, bx + bush_w, ground_y + 5], fill=TREE_DARK + (220,))
+        d.rectangle([bx+4, ground_y - bush_h + 4, bx + bush_w - 4, ground_y], fill=TREE_MID + (200,))
         for gx in range(bx, bx+bush_w, 4):
-            grass_h = random.randint(10, 25)
-            for gy in range(ground_y - grass_h, ground_y):
-                offset = int(math.sin(gy * 0.2) * 2)
-                px(vegetation, gx + offset, gy, TREE_LIGHT + (200,))
-    
+            grass_h = random.randint(8, 18)
+            d.line([(gx, ground_y - grass_h), (gx, ground_y)], fill=TREE_LIGHT + (200,), width=1)
     vegetation.save(os.path.join(BASE, "background", "vegetation.png"))
 
 
