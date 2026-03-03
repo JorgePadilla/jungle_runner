@@ -7,6 +7,7 @@ import '../services/storage_service.dart';
 import '../game/config/game_config.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/animated_button.dart';
+import '../widgets/character_preview.dart';
 
 /// Fully redesigned character shop with carousel, purchase bottom sheet,
 /// animated coin counter, and celebration effects.
@@ -935,15 +936,10 @@ class _SkinCardState extends State<_SkinCard>
             ],
           ),
           child: Center(
-            child: Image.asset(
-              'assets/images/player/jump_${widget.skinId}.png',
-              width: 60,
-              height: 60,
-              filterQuality: FilterQuality.none,
-              errorBuilder: (_, __, ___) => Text(
-                _skinEmoji(widget.skinId),
-                style: const TextStyle(fontSize: 40),
-              ),
+            child: CharacterPreview(
+              skinId: widget.skinId,
+              size: 60,
+              animationType: 'run',
             ),
           ),
         ),

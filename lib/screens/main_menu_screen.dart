@@ -11,6 +11,7 @@ import '../game/managers/audio_manager.dart';
 import '../game/config/game_config.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/animated_button.dart';
+import '../widgets/character_preview.dart';
 import 'game_screen.dart';
 import 'shop_screen.dart';
 import 'settings_screen.dart';
@@ -469,16 +470,10 @@ class _MainMenuScreenState extends State<MainMenuScreen>
                     ],
                   ),
                   child: Center(
-                    child: Image.asset(
-                      'assets/images/player/jump_$_selectedCharacter.png',
-                      width: 64,
-                      height: 64,
-                      filterQuality: FilterQuality.none,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.person,
-                        color: Colors.white,
-                        size: 48,
-                      ),
+                    child: CharacterPreview(
+                      skinId: _selectedCharacter,
+                      size: 64,
+                      animationType: 'run',
                     ),
                   ),
                 ),
