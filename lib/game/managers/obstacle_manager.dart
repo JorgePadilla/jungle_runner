@@ -13,6 +13,7 @@ class ObstacleManager extends Component {
   final List<PowerUp> _powerUps = [];
   
   double _spawnTimer = 0;
+  bool isSpawning = true;
   double _currentSpawnInterval = GameConfig.obstacleSpawnInterval;
   double _gameSpeed = GameConfig.playerSpeed;
   final double _groundY = GameConfig.worldHeight - GameConfig.groundHeight;
@@ -31,13 +32,15 @@ class ObstacleManager extends Component {
       return; // Skip all spawning during grace period
     }
     
-    // Update spawn timer
-    _spawnTimer += dt;
-    
-    // Spawn new obstacles when timer expires
-    if (_spawnTimer >= _currentSpawnInterval) {
-      _spawnObstacle();
-      _spawnTimer = 0;
+    if (isSpawning) {
+      // Update spawn timer
+      _spawnTimer += dt;
+
+      // Spawn new obstacles when timer expires
+      if (_spawnTimer >= _currentSpawnInterval) {
+        _spawnObstacle();
+        _spawnTimer = 0;
+      }
     }
     
     // Update all obstacles
@@ -274,5 +277,6 @@ class ObstacleManager extends Component {
     // Reset spawn timer and grace period
     _spawnTimer = 0;
     _gracePeriod = 2.5;
+    isSpawning = true;
   }
 }
