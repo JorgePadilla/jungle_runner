@@ -15,6 +15,7 @@ class Player extends PositionComponent {
   bool _hasDoubleJumped = false;
   bool _isShieldActive = false;
   bool _isMagnetActive = false;
+  bool _isVisible = true;
   double _shieldTimer = 0;
   double _magnetTimer = 0;
   String _skinId = 'default';
@@ -115,6 +116,11 @@ class Player extends PositionComponent {
     _slideSprite?.opacity = 0;
     _idleAnimation?.opacity = 0;
 
+    if (!_isVisible) {
+      _currentSprite = null;
+      return;
+    }
+
     // Show appropriate sprite based on state
     switch (_state) {
       case PlayerState.running:
@@ -213,6 +219,11 @@ class Player extends PositionComponent {
     }
   }
 
+  void setVisible(bool visible) {
+    _isVisible = visible;
+    _setCurrentSprite();
+  }
+
   void setState(PlayerState newState) {
     // Grant brief invincibility on state transitions to prevent
     // one-frame collision glitches (e.g. slide -> run size mismatch)
@@ -277,6 +288,8 @@ class Player extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
+    if (!_isVisible) return;
+
     super.render(canvas);
 
     // Draw shield effect if active

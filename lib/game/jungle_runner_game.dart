@@ -159,9 +159,11 @@ class JungleRunnerGame extends FlameGame
 
   @override
   void update(double dt) {
-    if (!_isLoaded || _gameState != GameState.playing) return;
+    if (!_isLoaded || _gameState == GameState.paused) return;
 
     super.update(dt);
+
+    if (_gameState != GameState.playing) return;
 
     // Update power-up timers
     _updatePowerUpTimers(dt);
@@ -306,8 +308,9 @@ class JungleRunnerGame extends FlameGame
     _gameState = GameState.gameOver;
     _vibrate(() => HapticFeedback.heavyImpact());
 
-    // Pause the engine to freeze the game state
-    pauseEngine();
+    // Hide player and stop obstacle spawning
+    _player.setVisible(false);
+    _obstacleManager.isSpawning = false;
 
     // Stop ALL music immediately
     AudioManager.instance.stopBackgroundMusic();
@@ -335,7 +338,7 @@ class JungleRunnerGame extends FlameGame
     _saveGameData();
 
     // Pause the engine after a short delay (let shake/particles play out)
-    Future.delayed(const Duration(milliseconds: 600), () {
+    Future.delayed(const Duration(milliseconds: 1000), () {
       if (_gameState == GameState.gameOver) {
         pauseEngine();
       }
@@ -449,6 +452,7 @@ class JungleRunnerGame extends FlameGame
     _obstacleManager.clearAll();
 
     // Reset player
+    _player.setVisible(true);
     _player.setState(PlayerState.running);
     _player.position = Vector2(
       100,
@@ -471,8 +475,10 @@ class JungleRunnerGame extends FlameGame
 
     // Clear current obstacles but don't reset difficulty
     _obstacleManager.clearAll();
+    _obstacleManager.isSpawning = true;
 
     // Reset player position
+    _player.setVisible(true);
     _player.setState(PlayerState.running);
     _player.position = Vector2(
       100,
